@@ -1,0 +1,6 @@
+{
+  "name": "Box Stacking and Opening Game",
+  "description": "A high-fidelity retro side-view physics sandbox about picking up, placing, stacking, and opening various boxes with satisfying mechanics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

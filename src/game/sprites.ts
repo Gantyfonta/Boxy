@@ -1,0 +1,499 @@
+// Pixel Art Sprite Sheet Generator and Pre-renderer
+
+type ColorPalette = { [key: string]: string };
+
+const palette: ColorPalette = {
+  '.': 'transparent',
+  'W': '#ffffff', // bright white
+  'G': '#9fadbc', // steel light gray
+  'D': '#333c57', // dark slate gray (Vibrant Palette Theme)
+  'B': '#10121c', // deep black-blue (Vibrant Palette Theme)
+  'r': '#a24b31', // terracotta/dark red (Vibrant Palette Theme)
+  'R': '#ef7d57', // bright peach orange-red (Vibrant Palette Theme)
+  'o': '#df9c5c', // warm yellow-orange (Vibrant Palette Theme)
+  'y': '#ffcd75', // gold yellow (Vibrant Palette Theme)
+  'Y': '#ffe385', // pale highlight yellow
+  'g': '#1a1c2c', // very deep slate wall dark (Vibrant Palette Theme)
+  'E': '#73ef7d', // vibrant lime green (Vibrant Palette Theme)
+  'b': '#566c86', // slate steel/blue (Vibrant Palette Theme)
+  'A': '#4fa9ff', // light sky blue
+  'C': '#36e5f0', // neon cyan
+  'p': '#7a31b4', // amethyst dark purple
+  'P': '#ce5ffc', // magenta hot purple
+  'F': '#ff8be6', // sweet pink
+  'w': '#df9c5c', // warm peach brown wood (Vibrant Palette Theme)
+  'd': '#a24b31', // dark terracotta brown (Vibrant Palette Theme)
+  'u': '#10121c', // charcoal support outline (Vibrant Palette Theme)
+  'S': '#f4f4f4', // soft paper white (Vibrant Palette Theme)
+};
+
+// 16x16 String Sprite Maps
+const SPRITE_MAPS: { [key: string]: string[] } = {
+  crate_wood: [
+    'uuuuuuuuuuuuuuuu',
+    'uwwwwwwwwwwwwwwwu',
+    'uwwwwwwwwwdwwwwu',
+    'uwddddddddddddwu',
+    'uwdwwwdwwwdwwdwu',
+    'uwdwwdwwwdwwwdwu',
+    'uwddddddddddddwu',
+    'uwdwwwwwdwwwwdwu',
+    'uwdwwwwdwwwwwdwu',
+    'uwddddddddddddwu',
+    'uwdwwdwwwwwdwdwu',
+    'uwdwdwwwwwdwwdwu',
+    'uwddddddddddddwu',
+    'uwwwwwwwwwwwwwwu',
+    'uuuuuuuuuuuuuuuu',
+    '................',
+  ],
+  crate_metal: [
+    'DDDDDDDDDDDDDDDD',
+    'DGGGGGGGGGGGGGGD',
+    'DGWWWWWWWWWWWWGD',
+    'DGWDDDDDDDDDDWGD',
+    'DGWDBBBBBBBBDWGD',
+    'DGWDByByByByBDWGD',
+    'DGWDBByByByBBDWGD',
+    'DGWDBBByByBBBDWGD',
+    'DGWDBBByByBBBDWGD',
+    'DGWDBByByByBBDWGD',
+    'DGWDByByByByBDWGD',
+    'DGWDBBBBBBBBDWGD',
+    'DGWWWWWWWWWWWWGD',
+    'DGGGGGGGGGGGGGGD',
+    'DDDDDDDDDDDDDDDD',
+    '................',
+  ],
+  crate_present: [
+    '................',
+    '.....yy....yy...',
+    '......yy..yy....',
+    '......yyyyy.....',
+    '....rrrrrrrrrr..',
+    '..rryryyrryryyr.',
+    '..rryryyrryryyr.',
+    '..yyyyYyyyyYyy..',
+    '..rryryyrryryyr.',
+    '..rryryyrryryyr.',
+    '..rryryyrryryyr.',
+    '..yyyyYyyyyYyy..',
+    '..rryryyrryryyr.',
+    '..rrrrrrrrrr....',
+    '................',
+    '................',
+  ],
+  crate_tnt: [
+    'uuuuuuuuuuuuuuuu',
+    'uRRRRRRRRRRRRRRu',
+    'uRyyByyByyByyBRu',
+    'uRByyByyByyByyRu',
+    'uRRRRRRRRRRRRRRu',
+    'uRRBBRRBBRRBBRRu',
+    'uRRBBRRBBRRBBRRu',
+    'uRRBBRRBBRRBBRRu',
+    'uRRuRRuRRuRRuRRu',
+    'uRRRRRRRRRRRRRRu',
+    'uRyyByyByyByyBRu',
+    'uRByyByyByyByyRu',
+    'uRRRRRRRRRRRRRRu',
+    'uuuuuuuuuuuuuuuu',
+    '................',
+    '................',
+  ],
+  crate_hover: [
+    'CCCCCCCCCCCCCCCC',
+    'CDDDDDDDDDDDDDDC',
+    'CDWWWWWWWWWWWWDC',
+    'CDWCCCCCC C C WDC',
+    'CDWCPPPPPPPPPWDC',
+    'CDWCPW C W W P WDC',
+    'CDWCPWCCCW W P WDC',
+    'CDWCPPPPPPPPPWDC',
+    'CDWCPPPPPPPPPWDC',
+    'CDWCPWCCCW W P WDC',
+    'CDWCPW C W W P WDC',
+    'CDWCPPPPPPPPPWDC',
+    'CDWWWWWWWWWWWWDC',
+    'CDDDDDDDDDDDDDDC',
+    'CCCCCCCCCCCCCCCC',
+    '................',
+  ],
+  // Player Robot Idle 1
+  player_idle_1: [
+    '......GGGG......',
+    '.....GCCCCG.....',
+    '....GCCCCWWG....',
+    '....GGGGGGGG....',
+    '.....DDDDDD.....',
+    '....DbbDDbbD....',
+    '....DbbDDbbD....',
+    '....DDDDDDDD....',
+    '....GGDDDDGG....',
+    '.....GGGGGG.....',
+    '.....D....D.....',
+    '....DDD..DDD....',
+    '...DDDD..DDDD...',
+    '...BBBB..BBBB...',
+    '................',
+    '................',
+  ],
+  player_idle_2: [
+    '......GGGG......',
+    '.....GCCCCG.....',
+    '....GCCCCAWG....',
+    '....GGGGGGGG....',
+    '.....DDDDDD.....',
+    '....DbbDDbbD....',
+    '....DbbDDbbD....',
+    '....DDDDDDDD....',
+    '....GGDDDDGG....',
+    '.....GGGGGG.....',
+    '.....DD..DD.....',
+    '.....DD..DD.....',
+    '....DDD..DDD....',
+    '....BBB..BBB....',
+    '................',
+    '................',
+  ],
+  player_walk_1: [
+    '......GGGG......',
+    '.....GCCCCG.....',
+    '....GCCCCWWG....',
+    '....GGGGGGGG....',
+    '.....DDDDDD.....',
+    '...DDbbDDbbD....',
+    '..D.DbbDDbbD....',
+    '....DDDDDDDD....',
+    '....GGDDDDGG....',
+    '.....GGGGGG.....',
+    '......D..D......',
+    '.....DD..D......',
+    '....DDD..DDD....',
+    '....BBB...BBB...',
+    '................',
+    '................',
+  ],
+  player_walk_2: [
+    '......GGGG......',
+    '.....GCCCCG.....',
+    '....GCCCCWWG....',
+    '....GGGGGGGG....',
+    '.....DDDDDD.....',
+    '....DbbDDbbD....',
+    '....DbbDDbbD....',
+    '....DDDDDDDD....',
+    '....GGDDDDGG....',
+    '.....GGGGGG.....',
+    '.....DD..DD.....',
+    '....DDD..DDD....',
+    '....BBB..BBB....',
+    '................',
+    '................',
+  ],
+  player_walk_3: [
+    '......GGGG......',
+    '.....GCCCCG.....',
+    '....GCCCCWWG....',
+    '....GGGGGGGG....',
+    '.....DDDDDD.....',
+    '....DbbDDbbD.D..',
+    '....DbbDDbbDD...',
+    '....DDDDDDDD....',
+    '....GGDDDDGG....',
+    '.....GGGGGG.....',
+    '......D..D......',
+    '......D..DD.....',
+    '....DDD..DDD....',
+    '....BBB...BBB...',
+    '................',
+    '................',
+  ],
+  player_walk_4: [
+    '......GGGG......',
+    '.....GCCCCG.....',
+    '....GCCCCWWG....',
+    '....GGGGGGGG....',
+    '.....DDDDDD.....',
+    '....DbbDDbbD....',
+    '....DbbDDbbD....',
+    '....DDDDDDDD....',
+    '....GGDDDDGG....',
+    '.....GGGGGG.....',
+    '.....DD..DD.....',
+    '....DDD..DDD....',
+    '....BBB..BBB....',
+    '................',
+    '................',
+  ],
+  player_jump: [
+    '......GGGG......',
+    '.....GCCCCG.....',
+    '....GCCCCWWG....',
+    '....GGGGGGGG....',
+    '...DDDDDDDDDD...',
+    '..D.DbbDDbbD.D..',
+    '....DbbDDbbD....',
+    '....DDDDDDDD....',
+    '....GGDDDDGG....',
+    '.....GGGGGG.....',
+    '....DD....DD....',
+    '....D......D....',
+    '...DD......DD...',
+    '...BB......BB...',
+    '................',
+    '................',
+  ],
+  player_carry_idle: [
+    '....D......D....',
+    '....DDGGGGDD....',
+    '.....DGCCCGD....',
+    '....DGCCCWWGD...',
+    '....GGGGGGGG....',
+    '.....DDDDDD.....',
+    '....DbbDDbbD....',
+    '....DbbDDbbD....',
+    '....DDDDDDDD....',
+    '....GGDDDDGG....',
+    '.....GGGGGG.....',
+    '.....D....D.....',
+    '....DDD..DDD....',
+    '...DDDD..DDDD...',
+    '...BBBB..BBBB...',
+    '................',
+  ],
+  // Key Loot
+  loot_key: [
+    '................',
+    '......yyyy......',
+    '.....yYYYYy.....',
+    '.....yY..Yy.....',
+    '.....yYYYYy.....',
+    '......yyyy......',
+    '.......yy.......',
+    '.......Yy.......',
+    '.......Yy.......',
+    '.......Yyy......',
+    '.......Yy.......',
+    '.......Yyyy.....',
+    '.......Yy.......',
+    '................',
+    '................',
+    '................',
+  ],
+  // Coin
+  loot_coin_1: [
+    '......yyyy......',
+    '....yyYYYYyy....',
+    '...yYYYYYYYYy...',
+    '..yYYYYyYYYYYy..',
+    '..yYYYy..yYYYy..',
+    '..yYYy....yYYy..',
+    '..yYYy....yYYy..',
+    '..yYYYy..yYYYy..',
+    '..yYYYYyYYYYYy..',
+    '...yYYYYYYYYy...',
+    '....yyYYYYyy....',
+    '......yyyy......',
+    '................',
+    '................',
+    '................',
+    '................',
+  ],
+  loot_coin_2: [
+    '.......yy.......',
+    '.....yyYYyy.....',
+    '....yYYYYYYy....',
+    '...yYYy..yYYy...',
+    '...yYy....yYy...',
+    '...yYy....yYy...',
+    '...yYy....yYy...',
+    '...yYy....yYy...',
+    '...yYYy..yYYy...',
+    '....yYYYYYYy....',
+    '.....yyYYyy.....',
+    '.......yy.......',
+    '................',
+    '................',
+    '................',
+    '................',
+  ],
+  loot_coin_3: [
+    '.......yy.......',
+    '......yYYy......',
+    '......yYYy......',
+    '......yYYy......',
+    '......yYYy......',
+    '......yYYy......',
+    '......yYYy......',
+    '......yYYy......',
+    '......yYYy......',
+    '......yYYy......',
+    '......yYYy......',
+    '.......yy.......',
+    '................',
+    '................',
+    '................',
+    '................',
+  ],
+  // Gems
+  loot_gem_red: [
+    '......WW......',
+    '....rrRRrr....',
+    '...rRRRRRRr...',
+    '..rRRRRRRRRr..',
+    '..rRRRRRRRRr..',
+    '..rrRRRRRRrr..',
+    '....rRRRRr....',
+    '.....rRRr.....',
+    '......rr......',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+  ],
+  loot_gem_blue: [
+    '......WW......',
+    '....bbAAbb....',
+    '...bAAAAAAb...',
+    '..bAAAAAAAAb..',
+    '..bAAAAAAAAb..',
+    '..bbAAAAAAbb..',
+    '....bAAAAb....',
+    '.....bAAb.....',
+    '......bb......',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+  ],
+  loot_gem_green: [
+    '......WW......',
+    '....ggEEgg....',
+    '...gEEEEEEg...',
+    '..gEEEEEEEEg..',
+    '..gEEEEEEEEg..',
+    '..ggEEEEEEgg..',
+    '....gEEEEg....',
+    '.....gEEg.....',
+    '......gg......',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+    '..............',
+  ],
+  loot_crown: [
+    '................',
+    '..y.y.y.y.y.y...',
+    '..yyyyYyyyyyy...',
+    '..yYyYyYyYyYy...',
+    '..yYYYYYYYYYy...',
+    '..yYyyYyyYyYy...',
+    '..yyyyyyyyyyy...',
+    '..yyyyyyyyyyy...',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+  ],
+};
+
+class SpriteSheetManager {
+  private cache: { [key: string]: HTMLCanvasElement } = {};
+
+  constructor() {
+    this.preRender();
+  }
+
+  private preRender() {
+    for (const [key, map] of Object.entries(SPRITE_MAPS)) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 16;
+      canvas.height = 16;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) continue;
+
+      ctx.clearRect(0, 0, 16, 16);
+      for (let r = 0; r < 16; r++) {
+        const row = map[r] || '................';
+        for (let c = 0; c < 16; c++) {
+          const char = row[c] || '.';
+          const color = palette[char];
+          if (color && color !== 'transparent') {
+            ctx.fillStyle = color;
+            ctx.fillRect(c, r, 1, 1);
+          }
+        }
+      }
+      this.cache[key] = canvas;
+    }
+  }
+
+  public drawSprite(
+    ctx: CanvasRenderingContext2D,
+    name: string,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    options?: {
+      flipX?: boolean;
+      angle?: number;
+      opacity?: number;
+      tint?: string;
+    }
+  ) {
+    const cachedCanvas = this.cache[name];
+    if (!cachedCanvas) {
+      // Draw falling back color block
+      ctx.fillStyle = '#ff00ff';
+      ctx.fillRect(x, y, w, h);
+      return;
+    }
+
+    ctx.save();
+    ctx.translate(x + w / 2, y + h / 2);
+
+    if (options?.angle) {
+      ctx.rotate(options.angle);
+    }
+    if (options?.flipX) {
+      ctx.scale(-1, 1);
+    }
+    if (options?.opacity !== undefined) {
+      ctx.globalAlpha = options.opacity;
+    }
+
+    // Disable image smoothing for perfect pixel art rendering!
+    ctx.imageSmoothingEnabled = false;
+    (ctx as any).mozImageSmoothingEnabled = false;
+    (ctx as any).webkitImageSmoothingEnabled = false;
+
+    // Draw pre-rendered sprite
+    ctx.drawImage(cachedCanvas, -w / 2, -h / 2, w, h);
+
+    // Apply color shading overlay for flashing or TNT fuse tick
+    if (options?.tint) {
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.fillStyle = options.tint;
+      ctx.fillRect(-w / 2, -h / 2, w, h);
+    }
+
+    ctx.restore();
+  }
+}
+
+export const sprites = new SpriteSheetManager();
