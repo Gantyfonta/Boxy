@@ -33,9 +33,24 @@ window.addEventListener("unhandledrejection", (e) => {
   }
 });
 
-let scale = 2; // pixel integer scaling factor
-let width = 640;
-let height = 360;
+// Constant internal resolution for retro pixel scaling
+const width = 640;
+const height = 360;
+const scale = 1; // Unused for rendering transforms because we render to internal buffer 1:1 and let CSS scale it
+
+// Assign base dimensions
+canvas.width = width;
+canvas.height = height;
+
+// Synchronize size constraints with physics limits
+engine.world.width = width;
+engine.world.height = height;
+
+const resizeCanvas = () => {
+  // We handle scaling purely through CSS aspect-ratio fitting now!
+  // It guarantees the game always shrinks or grows to fit the screen
+  // without changing the gameplay mechanics or dimensions.
+};
 
 // Menus Visibility States
 let isShopOpen = false;
@@ -43,30 +58,6 @@ let isClosetOpen = false;
 
 // Controller movement keys tracking
 const keys: { [key: string]: boolean } = {};
-
-const resizeCanvas = () => {
-  if (!container || !canvas) return;
-
-  const rect = container.getBoundingClientRect();
-  const displayWidth = Math.max(320, Math.floor(rect.width));
-  const displayHeight = Math.max(240, Math.floor(rect.height));
-
-  console.log("Resizing canvas to rect:", rect, "displayWidth:", displayWidth, "displayHeight:", displayHeight);
-
-  canvas.width = displayWidth;
-  canvas.height = displayHeight;
-
-  // Decide integer scaling factor so assets stay perfectly crisp
-  scale = Math.max(1.5, Math.floor(displayHeight / 190));
-  if (scale < 1) scale = 1;
-
-  width = Math.floor(displayWidth / scale);
-  height = Math.floor(displayHeight / scale);
-
-  // Synchronize size constraints with physics limits
-  engine.world.width = width;
-  engine.world.height = height;
-};
 
 // Initiate size scaling
 resizeCanvas();
@@ -149,11 +140,24 @@ window.addEventListener('keyup', handleKeyUp);
 // Coordinates translation
 const getVirtualMouseCoords = (clientX: number, clientY: number) => {
   const rect = canvas.getBoundingClientRect();
-  const rx = clientX - rect.left;
-  const ry = clientY - rect.top;
+  
+  // Calculate actual rendered size due to object-fit: contain
+  const scaleX = rect.width / width;
+  const scaleY = rect.height / height;
+  const actualScale = Math.min(scaleX, scaleY);
+  
+  const renderWidth = width * actualScale;
+  const renderHeight = height * actualScale;
+  
+  const offsetX = (rect.width - renderWidth) / 2;
+  const offsetY = (rect.height - renderHeight) / 2;
+  
+  const rx = clientX - rect.left - offsetX;
+  const ry = clientY - rect.top - offsetY;
+  
   return {
-    mx: Math.floor(rx / scale),
-    my: Math.floor(ry / scale),
+    mx: Math.floor(rx / actualScale),
+    my: Math.floor(ry / actualScale),
   };
 };
 
@@ -568,7 +572,7 @@ const drawLobbyCargoTruck = (w: number, h: number) => {
   // Lobby Truck is parked on the left: Cabin facing right (towards room)
   if (engine.gameMode === 'lobby') {
     const tx = 22;
-    const ty = groundY - 44;
+    const ty = groundY - 24; // 24 instead of 44 to account for sprite whitespace
     // Draw body segments
     sprites.drawSprite(ctx, 'truck_bed', tx, ty, 38, 44);
     sprites.drawSprite(ctx, 'truck_cabin', tx + 33, ty, 30, 44, { flipX: true });
@@ -593,7 +597,7 @@ const drawLobbyCargoTruck = (w: number, h: number) => {
     // Bed is at X: w - 105, cabin is at w - 45
     const bedX = w - 100;
     const cabX = w - 62;
-    const ty = groundY - 44;
+    const ty = groundY - 24;
 
     sprites.drawSprite(ctx, 'truck_bed', bedX, ty, 42, 44);
     sprites.drawSprite(ctx, 'truck_cabin', cabX, ty, 30, 44);

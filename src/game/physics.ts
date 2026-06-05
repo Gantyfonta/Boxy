@@ -350,11 +350,11 @@ export class GameEngine {
     if (rarity === 'common') {
       newBox.customColor = undefined; // natural
     } else if (rarity === 'rare') {
-      newBox.customColor = '#4fa9ff'; // electric blue
+      newBox.customColor = 'rgba(79, 169, 255, 0.4)'; // electric blue wash
     } else if (rarity === 'epic') {
-      newBox.customColor = '#ce5ffc'; // deep violet
+      newBox.customColor = 'rgba(206, 95, 252, 0.4)'; // deep violet wash
     } else if (rarity === 'legendary') {
-      newBox.customColor = '#ffcd75'; // gold yellow glow
+      newBox.customColor = 'rgba(255, 205, 117, 0.4)'; // gold yellow wash
     }
 
     this.boxes.push(newBox);
@@ -1315,33 +1315,40 @@ export class GameEngine {
     if (absX < halfW && absY < halfH) {
       const penX = halfW - absX;
       const penY = halfH - absY;
+      
+      const m1 = b1.type === 'hover' ? 999 : b1.mass;
+      const m2 = b2.type === 'hover' ? 999 : b2.mass;
+      const tot = m1 + m2;
+      const bounceE = b1.type === 'present' || b2.type === 'present' ? 0.48 : 0.08;
 
       if (penX < penY) {
         const dir = oX > 0 ? 1 : -1;
-        const m1 = b1.type === 'hover' ? 999 : b1.mass;
-        const m2 = b2.type === 'hover' ? 999 : b2.mass;
-        const tot = m1 + m2;
-
         b1.x += penX * dir * (m2 / tot);
         b2.x -= penX * dir * (m1 / tot);
 
-        const relativeVel = b1.vx - b2.vx;
-        b1.vx = -relativeVel * 0.15 * (m2 / tot) + b1.vx * 0.1;
-        b2.vx = relativeVel * 0.15 * (m1 / tot) + b2.vx * 0.1;
+        const relVel = (b1.vx - b2.vx) * dir;
+        if (relVel < 0) {
+          const j = -(1 + bounceE) * relVel;
+          b1.vx += j * dir * (m2 / tot);
+          b2.vx -= j * dir * (m1 / tot);
+        }
       } else {
         const dir = oY > 0 ? 1 : -1;
-        const m1 = b1.type === 'hover' ? 999 : b1.mass;
-        const m2 = b2.type === 'hover' ? 999 : b2.mass;
-        const tot = m1 + m2;
-
         b1.y += penY * dir * (m2 / tot);
         b2.y -= penY * dir * (m1 / tot);
 
-        const relativeVelY = b1.vy - b2.vy;
-        const bounceE = b1.type === 'present' || b2.type === 'present' ? 0.48 : 0.08;
-        
-        b1.vy = -relativeVelY * bounceE * (m2 / tot);
-        b2.vy = relativeVelY * bounceE * (m1 / tot);
+        const relVel = (b1.vy - b2.vy) * dir;
+        if (relVel < 0) {
+          const j = -(1 + bounceE) * relVel;
+          b1.vy += j * dir * (m2 / tot);
+          b2.vy -= j * dir * (m1 / tot);
+        }
+
+        // Apply friction
+        const relVelX = b1.vx - b2.vx;
+        const friction = 0.15;
+        b1.vx -= relVelX * friction * (m2 / tot);
+        b2.vx += relVelX * friction * (m1 / tot);
 
         if (dir === -1) {
           b1.onGround = true;
