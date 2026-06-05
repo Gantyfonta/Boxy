@@ -131,6 +131,34 @@ export class GameEngine {
   public portalBullets: PortalBullet[] = [];
   private playerTeleportCooldown: number = 0;
 
+  // Hookshot states
+  public hookshot = {
+    state: 'idle' as 'idle' | 'firing' | 'attached_wall' | 'attached_box',
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
+    attachedBoxId: null as string | null,
+    attachedWallX: 0,
+    attachedWallY: 0,
+    length: 0,
+  };
+
+  // Toolgun / Rope states
+  public toolgunSelected: {
+    type: 'box' | 'player' | 'wall';
+    id?: string;
+    x: number;
+    y: number;
+  } | null = null;
+
+  public ropes: {
+    id: string;
+    obj1: { type: 'box' | 'player' | 'wall'; id?: string; x: number; y: number };
+    obj2: { type: 'box' | 'player' | 'wall'; id?: string; x: number; y: number };
+    length: number;
+  }[] = [];
+
   // Pet movement coordinates
   public petX: number = 100;
   public petY: number = 200;
@@ -389,6 +417,453 @@ export class GameEngine {
 
       // Recoil
       this.player.vx -= (dx / dist) * 0.8;
+    }
+  }
+
+  public fireHookshot(targetX: number, targetY: number) {
+    if (this.currentTool !== 'hookshot') return;
+    if (this.hookshot.state !== 'idle') return;
+
+    sound.playTone(450, 680, 0.12, "triangle", 0.35);
+
+    const px = this.player.x + this.player.width / 2;
+    const py = this.player.y + this.player.height / 2;
+
+    const dx = targetX - px;
+    const dy = targetY - py;
+    const dist = Math.hypot(dx, dy);
+
+    this.hookshot.state = 'firing';
+    this.hookshot.x = px;
+    this.hookshot.y = py;
+
+    if (dist > 2) {
+      const speed = 19.0;
+      this.hookshot.vx = (dx / dist) * speed;
+      this.hookshot.vy = (dy / dist) * speed;
+    } else {
+      this.hookshot.vx = 19.0;
+      this.hookshot.vy = 0;
+    }
+    this.hookshot.attachedBoxId = null;
+    this.hookshot.length = 0;
+  }
+
+  public releaseHookshot() {
+    if (this.hookshot.state !== 'idle') {
+      this.hookshot.state = 'idle';
+      this.hookshot.attachedBoxId = null;
+      sound.playTone(280, 200, 0.08, "sine", 0.2);
+    }
+  }
+
+  public useToolgun(targetX: number, targetY: number) {
+    if (this.currentTool !== 'toolgun') return;
+
+    sound.playTone(600, 800, 0.08, "sine", 0.4);
+
+    // Look for a box
+    let clickedBox: any = null;
+    for (let i = this.boxes.length - 1; i >= 0; i--) {
+      const b = this.boxes[i];
+      if (targetX >= b.x && targetX <= b.x + b.width && targetY >= b.y && targetY <= b.y + b.height) {
+        clickedBox = b;
+        break;
+      }
+    }
+
+    // Look for player
+    let clickedPlayer = false;
+    const p = this.player;
+    if (targetX >= p.x && targetX <= p.x + p.width && targetY >= p.y && targetY <= p.y + p.height) {
+      clickedPlayer = true;
+    }
+
+    if (this.toolgunSelected === null) {
+      // First selection click
+      if (clickedBox) {
+        this.toolgunSelected = {
+          type: 'box',
+          id: clickedBox.id,
+          x: targetX - clickedBox.x,
+          y: targetY - clickedBox.y
+        };
+        this.spawnFloatingText("ANCHOR A: BOX", targetX, targetY - 10, "#4fa9ff");
+      } else if (clickedPlayer) {
+        this.toolgunSelected = {
+          type: 'player',
+          x: targetX - p.x,
+          y: targetY - p.y
+        };
+        this.spawnFloatingText("ANCHOR A: PLAYER", targetX, targetY - 10, "#ce5ffc");
+      } else {
+        this.toolgunSelected = {
+          type: 'wall',
+          x: targetX,
+          y: targetY
+        };
+        this.spawnFloatingText("ANCHOR A: WALL", targetX, targetY - 10, "#ffcd75");
+      }
+    } else {
+      // Second selection click - create rope!
+      let obj2: any;
+      let p2x = targetX;
+      let p2y = targetY;
+
+      if (clickedBox) {
+        obj2 = {
+          type: 'box',
+          id: clickedBox.id,
+          x: targetX - clickedBox.x,
+          y: targetY - clickedBox.y
+        };
+      } else if (clickedPlayer) {
+        obj2 = {
+          type: 'player',
+          x: targetX - p.x,
+          y: targetY - p.y
+        };
+      } else {
+        obj2 = {
+          type: 'wall',
+          x: targetX,
+          y: targetY
+        };
+      }
+
+      // Calculate coordinates of obj1 to determine distance
+      let p1x = 0;
+      let p1y = 0;
+      const obj1 = this.toolgunSelected;
+
+      if (obj1.type === 'wall') {
+        p1x = obj1.x;
+        p1y = obj1.y;
+      } else if (obj1.type === 'player') {
+        p1x = p.x + obj1.x;
+        p1y = p.y + obj1.y;
+      } else if (obj1.type === 'box') {
+        const b = this.boxes.find(bx => bx.id === obj1.id);
+        if (b) {
+          p1x = b.x + obj1.x;
+          p1y = b.y + obj1.y;
+        } else {
+          p1x = p.x + p.width / 2;
+          p1y = p.y + p.height / 2;
+        }
+      }
+
+      const length = Math.max(15, Math.hypot(p2x - p1x, p2y - p1y));
+
+      this.ropes.push({
+        id: makeId(),
+        obj1: obj1,
+        obj2: obj2,
+        length: length
+      });
+
+      this.toolgunSelected = null;
+      sound.playTone(300, 500, 0.15, "sawtooth", 0.3);
+      this.spawnFloatingText("ROPE CREATED", targetX, targetY - 10, "#73ef7d");
+
+      // Spawn neat impact particles
+      for (let k = 0; k < 6; k++) {
+        this.particles.push({
+          id: makeId(),
+          type: 'sparkle',
+          x: targetX,
+          y: targetY,
+          vx: Math.random() * 4 - 2,
+          vy: Math.random() * 4 - 2,
+          color: '#73ef7d',
+          size: Math.random() * 3 + 1,
+          life: 1.0,
+          decay: 0.05,
+          angle: 0,
+          angularVelocity: 0
+        });
+      }
+    }
+  }
+
+  public clearAllRopes() {
+    this.ropes = [];
+    this.toolgunSelected = null;
+  }
+
+  public updateHookshotPhysics() {
+    if (this.hookshot.state === 'idle') return;
+
+    const p = this.player;
+    const px = p.x + p.width / 2;
+    const py = p.y + p.height / 2;
+
+    if (this.hookshot.state === 'firing') {
+      this.hookshot.x += this.hookshot.vx;
+      this.hookshot.y += this.hookshot.vy;
+
+      // Spawn trace sparkles
+      if (Math.random() < 0.3) {
+        this.particles.push({
+          id: makeId(),
+          type: 'sparkle',
+          x: this.hookshot.x,
+          y: this.hookshot.y,
+          vx: 0,
+          vy: 0,
+          color: '#36e5f0',
+          size: 1.5,
+          life: 0.8,
+          decay: 0.08,
+          angle: 0,
+          angularVelocity: 0
+        });
+      }
+
+      const dist = Math.hypot(this.hookshot.x - px, this.hookshot.y - py);
+      if (dist > 320) {
+        // Exceed line bounds -> retract
+        this.hookshot.state = 'idle';
+        sound.playTone(200, 150, 0.08, "sine", 0.2);
+        return;
+      }
+
+      // Check boundaries hit
+      const groundY = this.world.height - 32;
+      let hitWall = false;
+      if (this.hookshot.x <= 10) {
+        this.hookshot.x = 10;
+        hitWall = true;
+      } else if (this.hookshot.x >= this.world.width - 10) {
+        this.hookshot.x = this.world.width - 10;
+        hitWall = true;
+      }
+
+      if (this.hookshot.y <= 5) {
+        this.hookshot.y = 5;
+        hitWall = true;
+      } else if (this.hookshot.y >= groundY) {
+        this.hookshot.y = groundY;
+        hitWall = true;
+      }
+
+      if (hitWall) {
+        this.hookshot.state = 'attached_wall';
+        this.hookshot.attachedWallX = this.hookshot.x;
+        this.hookshot.attachedWallY = this.hookshot.y;
+        this.hookshot.length = dist;
+        sound.playTone(330, 220, 0.1, "triangle", 0.4);
+        return;
+      }
+
+      // Check box hits
+      for (const b of this.boxes) {
+        if (b.grabbed) continue;
+        if (this.hookshot.x >= b.x && this.hookshot.x <= b.x + b.width &&
+            this.hookshot.y >= b.y && this.hookshot.y <= b.y + b.height) {
+          this.hookshot.state = 'attached_box';
+          this.hookshot.attachedBoxId = b.id;
+          this.hookshot.length = dist;
+          sound.playTone(400, 300, 0.08, "sine", 0.3);
+          return;
+        }
+      }
+    } else if (this.hookshot.state === 'attached_wall') {
+      // Pull player to wall anchor
+      const dx = this.hookshot.attachedWallX - px;
+      const dy = this.hookshot.attachedWallY - py;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist < 18) {
+        // Automatically retract when touching
+        this.hookshot.state = 'idle';
+        return;
+      }
+
+      const force = 0.85;
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+
+      p.vx += fx;
+      p.vy += fy * 0.9;
+      p.onGround = false;
+
+      // Cap player speeds during hook drag
+      const limit = 8.5;
+      const speed = Math.hypot(p.vx, p.vy);
+      if (speed > limit) {
+        p.vx = (p.vx / speed) * limit;
+        p.vy = (p.vy / speed) * limit;
+      }
+
+      // Sync hook positions
+      this.hookshot.x = this.hookshot.attachedWallX;
+      this.hookshot.y = this.hookshot.attachedWallY;
+    } else if (this.hookshot.state === 'attached_box') {
+      // Pull box to player!
+      const b = this.boxes.find(bx => bx.id === this.hookshot.attachedBoxId);
+      if (!b || b.grabbed) {
+        this.hookshot.state = 'idle';
+        return;
+      }
+
+      const dx = px - (b.x + b.width / 2);
+      const dy = py - (b.y + b.height / 2);
+      const dist = Math.hypot(dx, dy);
+
+      if (dist < 26) {
+        // Close enough - release
+        this.hookshot.state = 'idle';
+        return;
+      }
+
+      const force = 1.35;
+      const pullMult = force / b.mass;
+      // Add slightly upward vector to help clear ground friction obstacles
+      b.vx += (dx / dist) * pullMult;
+      b.vy += ((dy / dist) * pullMult) - 0.22;
+
+      // Restrict drift velocity magnitudes
+      const limit = 9.0;
+      const bSpeed = Math.hypot(b.vx, b.vy);
+      if (bSpeed > limit) {
+        b.vx = (b.vx / bSpeed) * limit;
+        b.vy = (b.vy / bSpeed) * limit;
+      }
+
+      // Anchor hook on the moving box
+      this.hookshot.x = b.x + b.width / 2;
+      this.hookshot.y = b.y + b.height / 2;
+    }
+  }
+
+  public updateRopesPhysics() {
+    if (this.ropes.length === 0) return;
+
+    const passes = 3;
+    for (let pass = 0; pass < passes; pass++) {
+      this.ropes = this.ropes.filter(rope => {
+        let p1x = 0, p1y = 0;
+        let invM1 = 0;
+        let vx1 = 0, vy1 = 0;
+
+        if (rope.obj1.type === 'wall') {
+          p1x = rope.obj1.x;
+          p1y = rope.obj1.y;
+          invM1 = 0;
+        } else if (rope.obj1.type === 'player') {
+          p1x = this.player.x + this.player.width / 2;
+          p1y = this.player.y + this.player.height / 2;
+          invM1 = 1.0 / 2.0;
+          vx1 = this.player.vx;
+          vy1 = this.player.vy;
+        } else if (rope.obj1.type === 'box') {
+          const b = this.boxes.find(box => box.id === rope.obj1.id);
+          if (!b) return false;
+          p1x = b.x + rope.obj1.x;
+          p1y = b.y + rope.obj1.y;
+          invM1 = 1.0 / b.mass;
+          vx1 = b.vx;
+          vy1 = b.vy;
+        }
+
+        let p2x = 0, p2y = 0;
+        let invM2 = 0;
+        let vx2 = 0, vy2 = 0;
+
+        if (rope.obj2.type === 'wall') {
+          p2x = rope.obj2.x;
+          p2y = rope.obj2.y;
+          invM2 = 0;
+        } else if (rope.obj2.type === 'player') {
+          p2x = this.player.x + this.player.width / 2;
+          p2y = this.player.y + this.player.height / 2;
+          invM2 = 1.0 / 2.0;
+          vx2 = this.player.vx;
+          vy2 = this.player.vy;
+        } else if (rope.obj2.type === 'box') {
+          const b = this.boxes.find(box => box.id === rope.obj2.id);
+          if (!b) return false;
+          p2x = b.x + rope.obj2.x;
+          p2y = b.y + rope.obj2.y;
+          invM2 = 1.0 / b.mass;
+          vx2 = b.vx;
+          vy2 = b.vy;
+        }
+
+        const dx = p2x - p1x;
+        const dy = p2y - p1y;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist > rope.length) {
+          const overshoot = dist - rope.length;
+          const ux = dx / dist;
+          const uy = dy / dist;
+          const totalInvMass = invM1 + invM2;
+
+          if (totalInvMass > 0) {
+            const correction = overshoot * 0.98;
+            const dispX = ux * correction;
+            const dispY = uy * correction;
+
+            if (rope.obj1.type === 'player') {
+              this.player.x += dispX * (invM1 / totalInvMass);
+              this.player.y += dispY * (invM1 / totalInvMass);
+            } else if (rope.obj1.type === 'box') {
+              const b = this.boxes.find(box => box.id === rope.obj1.id)!;
+              if (!b.grabbed) {
+                b.x += dispX * (invM1 / totalInvMass);
+                b.y += dispY * (invM1 / totalInvMass);
+              }
+            }
+
+            if (rope.obj2.type === 'player') {
+              this.player.x -= dispX * (invM2 / totalInvMass);
+              this.player.y -= dispY * (invM2 / totalInvMass);
+            } else if (rope.obj2.type === 'box') {
+              const b = this.boxes.find(box => box.id === rope.obj2.id)!;
+              if (!b.grabbed) {
+                b.x -= dispX * (invM2 / totalInvMass);
+                b.y -= dispY * (invM2 / totalInvMass);
+              }
+            }
+
+            // Adjust relative velocity along constraint normal to steady ropes and apply friction
+            const rvX = vx2 - vx1;
+            const rvY = vy2 - vy1;
+            const normalVel = rvX * ux + rvY * uy;
+
+            if (normalVel > 0) {
+              const impulse = normalVel * 0.9;
+              const impulseX = ux * impulse;
+              const impulseY = uy * impulse;
+
+              if (rope.obj1.type === 'player') {
+                this.player.vx += impulseX * (invM1 / totalInvMass);
+                this.player.vy += impulseY * (invM1 / totalInvMass);
+              } else if (rope.obj1.type === 'box') {
+                const b = this.boxes.find(box => box.id === rope.obj1.id)!;
+                if (!b.grabbed) {
+                  b.vx += impulseX * (invM1 / totalInvMass);
+                  b.vy += impulseY * (invM1 / totalInvMass);
+                }
+              }
+
+              if (rope.obj2.type === 'player') {
+                this.player.vx -= impulseX * (invM2 / totalInvMass);
+                this.player.vy -= impulseY * (invM2 / totalInvMass);
+              } else if (rope.obj2.type === 'box') {
+                const b = this.boxes.find(box => box.id === rope.obj2.id)!;
+                if (!b.grabbed) {
+                  b.vx -= impulseX * (invM2 / totalInvMass);
+                  b.vy -= impulseY * (invM2 / totalInvMass);
+                }
+              }
+            }
+          }
+        }
+        return true;
+      });
     }
   }
 
@@ -941,8 +1416,8 @@ export class GameEngine {
     
     box.x = this.player.x + (direction * 18);
     box.y = this.player.y - 6;
-    box.vx = direction * 5.2 + this.player.vx * 0.5;
-    box.vy = -4.2;
+    box.vx = direction * 6.5 + this.player.vx * 0.85;
+    box.vy = -4.8 + (this.player.vy < 0 ? this.player.vy * 0.65 : -0.2);
     box.angularVelocity = direction * (Math.random() * 0.15 + 0.1);
     
     box.squishX = 0.7;
@@ -1128,6 +1603,10 @@ export class GameEngine {
     // Projectile laser shots physics
     this.updatePortalBullets();
 
+    // Hookshot and Rope constraint calculations
+    this.updateHookshotPhysics();
+    this.updateRopesPhysics();
+
     // Standard kinetic steps
     this.updatePlayerMovement();
     
@@ -1220,7 +1699,14 @@ export class GameEngine {
         b.squishX = 1.0 - Math.min(0.2, Math.abs(b.vx) * 0.02);
         b.squishY = 1.0 + Math.min(0.3, Math.abs(b.vy) * 0.02);
       } else {
-        if (b.type === 'hover') {
+        const gBox = b as any;
+        const isRarerThanBlue = (gBox.rarity === 'epic' || gBox.rarity === 'legendary');
+        const isCeilingStuck = isRarerThanBlue && b.y <= 6;
+
+        if (isCeilingStuck) {
+          b.vy = 0;
+          b.vx = 0;
+        } else if (b.type === 'hover') {
           b.vy *= 0.85;
           b.vx *= this.world.friction;
         } else {
@@ -1284,7 +1770,15 @@ export class GameEngine {
         b.squishX = 0.75; b.squishY = 1.25;
       }
       
-      if (b.y < 5) {
+      const gBox = b as any;
+      const isRarerThanBlue = (gBox.rarity === 'epic' || gBox.rarity === 'legendary');
+      if (b.y <= 6 && isRarerThanBlue) {
+        b.y = 5;
+        b.vy = 0;
+        b.vx = 0;
+        b.angularVelocity = 0;
+        b.angle = 0;
+      } else if (b.y < 5) {
         b.y = 5;
         b.vy = -b.vy * 0.4;
       }
@@ -1413,7 +1907,7 @@ export class GameEngine {
           }
         } else {
           const dir = dY > 0 ? 1 : -1;
-          if (dir === 1) {
+          if (dir === -1) {
             p.y = b.y - p.height;
             if (p.vy > 1.5) {
               sound.playLand();

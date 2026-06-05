@@ -120,6 +120,11 @@ const handleKeyDown = (e: KeyboardEvent) => {
     engine.throwBox();
   }
 
+  if (code === 'KeyC') {
+    engine.clearAllRopes();
+    engine.spawnFloatingText("ROPES CLEARED! ✂️", engine.player.x + 12, engine.player.y - 12, "#ffcd75");
+  }
+
   if (code === 'KeyQ') {
     engine.tryOpenBox();
   }
@@ -225,6 +230,18 @@ const handleMouseDown = (e: MouseEvent) => {
     return;
   }
 
+  // Hookshot Drag Line check
+  if (engine.currentTool === 'hookshot') {
+    engine.fireHookshot(mx, my);
+    return;
+  }
+
+  // Rope Toolgun Anchor Placement check
+  if (engine.currentTool === 'toolgun') {
+    engine.useToolgun(mx, my);
+    return;
+  }
+
   // Default Click physics grabbing / flinging
   engine.handleMouseDown(mx, my);
 };
@@ -243,47 +260,65 @@ const handleShopClicks = (mx: number, my: number) => {
     return;
   }
 
-  // Click Upgrade Truck Capacity Item: Y: py + 55, H: 22
-  const upgY = py + 52;
-  if (my >= upgY && my <= upgY + 22) {
-    if (engine.purchaseTruckCapacity()) {
-      engine.spawnFloatingText("CAPACITY UPGRADED! 🚚", width / 2, upgY, "#73ef7d");
-    } else {
-      sound.playSplat();
-      engine.spawnFloatingText("INSUFFICIENT COINS!", width / 2, upgY, "#ef7d57");
+  // Column 1 (Left column click)
+  if (mx >= px + 10 && mx <= px + 155) {
+    // Row 1: Upgrade Truck Capacity
+    if (my >= py + 40 && my <= py + 72) {
+      if (engine.purchaseTruckCapacity()) {
+        engine.spawnFloatingText("CAPACITY UPGRADED! 🚚", width / 2, py + 56, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("INSUFFICIENT COINS!", width / 2, py + 56, "#ef7d57");
+      }
+    }
+    // Row 2: Mouse Cursor Tool
+    else if (my >= py + 76 && my <= py + 108 && !engine.inventory.tools.includes('mouse_cursor')) {
+      if (engine.purchaseToolUnlock('mouse_cursor', 50, 0)) {
+        engine.spawnFloatingText("MOUSE DRAG UNLOCKED!", width / 2, py + 92, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("INSUFFICIENT COINS!", width / 2, py + 92, "#ef7d57");
+      }
+    }
+    // Row 3: Blue Shamrock Lucky charm
+    else if (my >= py + 112 && my <= py + 144 && !engine.inventory.tools.includes('shamrock')) {
+      if (engine.purchaseToolUnlock('shamrock', 350, 0)) {
+        engine.spawnFloatingText("LUCKY SHAMROCK ACQUIRED!", width / 2, py + 128, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("INSUFFICIENT COINS!", width / 2, py + 128, "#ef7d57");
+      }
     }
   }
 
-  // Click Mouse Cursor Tool: Y: py + 84
-  const cY = py + 84;
-  if (my >= cY && my <= cY + 22 && !engine.inventory.tools.includes('mouse_cursor')) {
-    if (engine.purchaseToolUnlock('mouse_cursor', 50, 0)) {
-      engine.spawnFloatingText("MOUSE DRAG UNLOCKED!", width / 2, cY, "#73ef7d");
-    } else {
-      sound.playSplat();
-      engine.spawnFloatingText("INSUFFICIENT COINS!", width / 2, cY, "#ef7d57");
+  // Column 2 (Right column click)
+  if (mx >= px + 160 && mx <= px + 310) {
+    // Row 1: Portal Gun
+    if (my >= py + 40 && my <= py + 72 && !engine.inventory.tools.includes('portal_gun')) {
+      if (engine.purchaseToolUnlock('portal_gun', 500, 5)) {
+        engine.spawnFloatingText("PORTAL GUN UNLOCKED!", width / 2, py + 56, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("REQUIRES 500 COINS & 5 GEMS!", width / 2, py + 56, "#ef7d57");
+      }
     }
-  }
-
-  // Click Blue Shamrock: Y: py + 114
-  const sY = py + 114;
-  if (my >= sY && my <= sY + 22 && !engine.inventory.tools.includes('shamrock')) {
-    if (engine.purchaseToolUnlock('shamrock', 350, 0)) {
-      engine.spawnFloatingText("LUCKY SHAMROCK ACQUIRED!", width / 2, sY, "#73ef7d");
-    } else {
-      sound.playSplat();
-      engine.spawnFloatingText("INSUFFICIENT COINS!", width / 2, sY, "#ef7d57");
+    // Row 2: Magnetic Hookshot
+    else if (my >= py + 76 && my <= py + 108 && !engine.inventory.tools.includes('hookshot')) {
+      if (engine.purchaseToolUnlock('hookshot', 200, 2)) {
+        engine.spawnFloatingText("HOOKSHOT UNLOCKED! 🪝", width / 2, py + 92, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("REQUIRES 200 COINS & 2 GEMS!", width / 2, py + 92, "#ef7d57");
+      }
     }
-  }
-
-  // Click Portal Gun Laser: Y: py + 144
-  const pY = py + 144;
-  if (my >= pY && my <= pY + 22 && !engine.inventory.tools.includes('portal_gun')) {
-    if (engine.purchaseToolUnlock('portal_gun', 500, 5)) {
-      engine.spawnFloatingText("PORTAL GUN UNLOCKED!", width / 2, pY, "#73ef7d");
-    } else {
-      sound.playSplat();
-      engine.spawnFloatingText("REQUIRES 500 COINS & 5 GEMS!", width / 2, pY, "#ef7d57");
+    // Row 3: Rope Toolgun
+    else if (my >= py + 112 && my <= py + 144 && !engine.inventory.tools.includes('toolgun')) {
+      if (engine.purchaseToolUnlock('toolgun', 400, 3)) {
+        engine.spawnFloatingText("ROPE TOOLGUN UNLOCKED! 🔫", width / 2, py + 128, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("REQUIRES 400 COINS & 3 GEMS!", width / 2, py + 128, "#ef7d57");
+      }
     }
   }
 };
@@ -347,18 +382,28 @@ const handleClosetClicks = (mx: number, my: number) => {
 
   if (mx >= col2X && mx <= col2X + col2W) {
     // Tool slot 1: Cursor
-    if (my >= py + 48 && my <= py + 64) {
+    if (my >= py + 38 && my <= py + 49) {
       if (engine.inventory.tools.includes('mouse_cursor')) engine.toggleEquipTool('mouse_cursor');
       else sound.playSplat();
     }
     // Tool slot 2: Shamrock
-    else if (my >= py + 68 && my <= py + 84) {
+    else if (my >= py + 50 && my <= py + 61) {
       if (engine.inventory.tools.includes('shamrock')) engine.toggleEquipTool('shamrock');
       else sound.playSplat();
     }
     // Tool slot 3: Portal Gun
-    else if (my >= py + 88 && my <= py + 104) {
+    else if (my >= py + 62 && my <= py + 73) {
       if (engine.inventory.tools.includes('portal_gun')) engine.toggleEquipTool('portal_gun');
+      else sound.playSplat();
+    }
+    // Tool slot 4: Hookshot
+    else if (my >= py + 74 && my <= py + 85) {
+      if (engine.inventory.tools.includes('hookshot')) engine.toggleEquipTool('hookshot');
+      else sound.playSplat();
+    }
+    // Tool slot 5: Toolgun
+    else if (my >= py + 86 && my <= py + 97) {
+      if (engine.inventory.tools.includes('toolgun')) engine.toggleEquipTool('toolgun');
       else sound.playSplat();
     }
     // Pet slot 1: Dog
@@ -391,6 +436,7 @@ const handleMouseMove = (e: MouseEvent) => {
 
 const handleMouseUp = () => {
   engine.handleMouseUp();
+  engine.releaseHookshot();
 };
 
 const handleTouchStart = (e: TouchEvent) => {
@@ -415,6 +461,16 @@ const handleTouchStart = (e: TouchEvent) => {
 
     if (isClosetOpen) {
       handleClosetClicks(mx, my);
+      return;
+    }
+
+    if (engine.currentTool === 'hookshot') {
+      engine.fireHookshot(mx, my);
+      return;
+    }
+
+    if (engine.currentTool === 'toolgun') {
+      engine.useToolgun(mx, my);
       return;
     }
 
@@ -693,6 +749,8 @@ const drawCarriedTool = (px: number, py: number, flipX: boolean) => {
   let toolSprite = 'tool_mouse_cursor';
   if (engine.currentTool === 'portal_gun') toolSprite = 'tool_portal_gun';
   else if (engine.currentTool === 'shamrock') toolSprite = 'tool_shamrock';
+  else if (engine.currentTool === 'hookshot') toolSprite = 'tool_hookshot';
+  else if (engine.currentTool === 'toolgun') toolSprite = 'tool_toolgun';
 
   sprites.drawSprite(ctx, toolSprite, tx, ty, 12, 12, { flipX: flipX });
 };
@@ -870,78 +928,149 @@ const drawShopWindowModal = (w: number, h: number) => {
   // Money labels
   ctx.textAlign = 'right';
   ctx.fillStyle = '#73ef7d';
-  ctx.fillText(`COINS: ${engine.coins} | GEMS: ${engine.gems}`, px + panelW - 12, py + 32);
+  ctx.fillText(`COINS: ${engine.coins} | GEMS: ${engine.gems}`, px + panelW - 12, py + 30);
 
-  // 1. Upgrade Capacity Line item
+  // ------------------------------------
+  // COLUMN 1 (Left column - Upgrades & Standard Accessories)
+  // ------------------------------------
+  
+  // Row 1: Upgrade Cargo Capacity
   const upLevel = engine.truckCapacityUpgradeLevel;
   const nextCapacity = 3 + upLevel;
   const upCost = engine.getTruckUpgradeCost();
+  const canAffordUpg = engine.coins >= upCost;
 
   ctx.textAlign = 'left';
-  ctx.fillStyle = '#f4f4f4';
-  ctx.font = 'bold 7px monospace';
-  ctx.fillText(`🚚 TRUCK CAPACITY LEVEL +1 [Currently: ${nextCapacity}]`, px + 12, py + 52);
-  ctx.font = '5.8px monospace';
+  ctx.font = 'bold 6.2px monospace';
+  ctx.fillStyle = '#ffe385';
+  ctx.fillText("🚚 TRUCK UPGRADE", px + 12, py + 48);
+  ctx.font = '5px monospace';
   ctx.fillStyle = '#9fadbc';
-  ctx.fillText(`Upgrades loaded boxes limit. LEVEL Cost: ${upCost} COINS`, px + 12, py + 62);
+  ctx.fillText(`Adds loader slot [Max: ${nextCapacity}]`, px + 12, py + 56);
+  ctx.fillText(`Cost: ${upCost} Coins`, px + 12, py + 64);
 
-  ctx.fillStyle = engine.coins >= upCost ? '#73ef7d' : '#333c57';
-  ctx.fillRect(px + panelW - 60, py + 46, 50, 18);
+  ctx.fillStyle = canAffordUpg ? '#73ef7d' : '#a24b31';
+  ctx.fillRect(px + 112, py + 42, 38, 24);
   ctx.fillStyle = '#10121c';
-  ctx.font = 'bold 6px monospace';
+  ctx.font = 'bold 5.8px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText("BUY UP", px + panelW - 35, py + 57);
+  ctx.fillText("UPGRADE", px + 131, py + 52);
+  ctx.font = '5px monospace';
+  ctx.fillText(`-${upCost}C`, px + 131, py + 61);
 
-  // 2. Mouse Hand drag unlock tool
+  // Row 2: Mouse Hand Drag Tool
   const hasCursor = engine.inventory.tools.includes('mouse_cursor');
+  const canAffordCursor = engine.coins >= 50;
+
   ctx.textAlign = 'left';
+  ctx.font = 'bold 6.2px monospace';
   ctx.fillStyle = '#f4f4f4';
-  ctx.font = 'bold 7px monospace';
-  ctx.fillText("🖱️ RETRO CURSOR MOUSE FLING TOOL", px + 12, py + 84);
-  ctx.font = '5.8px monospace';
+  ctx.fillText("🖱️ RETRO CURSOR", px + 12, py + 84);
+  ctx.font = '5px monospace';
   ctx.fillStyle = '#9fadbc';
-  ctx.fillText("Allows you to drag & fling crates physics with the mouse!", px + 12, py + 94);
+  ctx.fillText("Drag-sling physics crates", px + 12, py + 92);
+  ctx.fillText("Cost: 50 Coins", px + 12, py + 100);
 
-  ctx.fillStyle = hasCursor ? '#333c57' : (engine.coins >= 50 ? '#73ef7d' : '#a24b31');
-  ctx.fillRect(px + panelW - 60, py + 78, 50, 18);
-  ctx.fillStyle = '#10121c';
-  ctx.font = 'bold 6px monospace';
+  ctx.fillStyle = hasCursor ? '#333c57' : (canAffordCursor ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(px + 112, py + 78, 38, 24);
+  ctx.fillStyle = hasCursor ? '#9fadbc' : '#10121c';
+  ctx.font = 'bold 5.8px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(hasCursor ? "OWNED" : "50 COINS", px + panelW - 35, py + 89);
+  ctx.fillText(hasCursor ? "OWNED" : "UNLOCK", px + 131, py + 88);
+  ctx.font = '5px monospace';
+  ctx.fillText(hasCursor ? "✓" : "-50C", px + 131, py + 97);
 
-  // 3. Blue Shamrock Lucky charm tool
+  // Row 3: Blue Shamrock Lucky multiplier
   const hasLucky = engine.inventory.tools.includes('shamrock');
+  const canAffordLucky = engine.coins >= 350;
+
   ctx.textAlign = 'left';
+  ctx.font = 'bold 6.2px monospace';
   ctx.fillStyle = '#f4f4f4';
-  ctx.font = 'bold 7px monospace';
-  ctx.fillText("🍀 BLUE SHAMROCK LUCKY MULTIPLIER", px + 12, py + 114);
-  ctx.font = '5.8px monospace';
+  ctx.fillText("🍀 LUCKY CLOVER", px + 12, py + 120);
+  ctx.font = '5px monospace';
   ctx.fillStyle = '#9fadbc';
-  ctx.fillText("Vastly highers the chances of dropping rare & epic crates!", px + 12, py + 124);
+  ctx.fillText("Multiplies rare box drops", px + 12, py + 128);
+  ctx.fillText("Cost: 350 Coins", px + 12, py + 136);
 
-  ctx.fillStyle = hasLucky ? '#333c57' : (engine.coins >= 350 ? '#73ef7d' : '#a24b31');
-  ctx.fillRect(px + panelW - 60, py + 108, 50, 18);
-  ctx.fillStyle = '#10121c';
-  ctx.font = 'bold 6px monospace';
+  ctx.fillStyle = hasLucky ? '#333c57' : (canAffordLucky ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(px + 112, py + 114, 38, 24);
+  ctx.fillStyle = hasLucky ? '#9fadbc' : '#10121c';
+  ctx.font = 'bold 5.8px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(hasLucky ? "OWNED" : "350 COIN", px + panelW - 35, py + 119);
+  ctx.fillText(hasLucky ? "OWNED" : "UNLOCK", px + 131, py + 124);
+  ctx.font = '5px monospace';
+  ctx.fillText(hasLucky ? "✓" : "-350C", px + 131, py + 133);
 
-  // 4. Portal Gun tool
+  // ------------------------------------
+  // COLUMN 2 (Right column - Tech Lab Gear & Weapons)
+  // ------------------------------------
+
+  // Row 1: High Tech Portal Gun
   const hasGun = engine.inventory.tools.includes('portal_gun');
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#f4f4f4';
-  ctx.font = 'bold 7px monospace';
-  ctx.fillText("🔮 HIGH-TECH QUANTUM PORTAL GUN", px + 12, py + 144);
-  ctx.font = '5.8px monospace';
-  ctx.fillStyle = '#9fadbc';
-  ctx.fillText("Shoots portals connecting spatial loops. Fling physical crates!", px + 12, py + 154);
+  const canAffordGun = engine.coins >= 500 && engine.gems >= 5;
 
-  ctx.fillStyle = hasGun ? '#333c57' : (engine.coins >= 500 && engine.gems >= 5 ? '#73ef7d' : '#a24b31');
-  ctx.fillRect(px + panelW - 60, py + 138, 50, 18);
-  ctx.fillStyle = '#10121c';
-  ctx.font = 'bold 6px monospace';
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 6.2px monospace';
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillText("🔮 PORTAL LASER", px + 162, py + 48);
+  ctx.font = '5px monospace';
+  ctx.fillStyle = '#9fadbc';
+  ctx.fillText("Hyper flight spatial wormholes", px + 162, py + 56);
+  ctx.fillText("Cost: 500 Coins & 5 Gems", px + 162, py + 64);
+
+  ctx.fillStyle = hasGun ? '#333c57' : (canAffordGun ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(px + 268, py + 42, 40, 24);
+  ctx.fillStyle = hasGun ? '#9fadbc' : '#10121c';
+  ctx.font = 'bold 5.8px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(hasGun ? "OWNED" : "500C/5G", px + panelW - 35, py + 149);
+  ctx.fillText(hasGun ? "OWNED" : "UNLOCK", px + 288, py + 88 - 36);
+  ctx.font = '5px monospace';
+  ctx.fillText(hasGun ? "✓" : "-500C/5G", px + 288, py + 97 - 36);
+
+  // Row 2: Magnetic Hookshot
+  const hasHook = engine.inventory.tools.includes('hookshot');
+  const canAffordHook = engine.coins >= 200 && engine.gems >= 2;
+
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 6.2px monospace';
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillText("🪝 MAGNETIC HOOK", px + 162, py + 84);
+  ctx.font = '5px monospace';
+  ctx.fillStyle = '#9fadbc';
+  ctx.fillText("Pull boxes or climb boundaries", px + 162, py + 92);
+  ctx.fillText("Cost: 200 Coins & 2 Gems", px + 162, py + 100);
+
+  ctx.fillStyle = hasHook ? '#333c57' : (canAffordHook ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(px + 268, py + 78, 40, 24);
+  ctx.fillStyle = hasHook ? '#9fadbc' : '#10121c';
+  ctx.font = 'bold 5.8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(hasHook ? "OWNED" : "UNLOCK", px + 288, py + 88);
+  ctx.font = '5px monospace';
+  ctx.fillText(hasHook ? "✓" : "-200C/2G", px + 288, py + 97);
+
+  // Row 3: Mechanical Rope Toolgun
+  const hasTgun = engine.inventory.tools.includes('toolgun');
+  const canAffordTgun = engine.coins >= 400 && engine.gems >= 3;
+
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 6.2px monospace';
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillText("🔫 INDUSTRIAL ROPE", px + 162, py + 120);
+  ctx.font = '5px monospace';
+  ctx.fillStyle = '#9fadbc';
+  ctx.fillText("Physically link physics elements", px + 162, py + 128);
+  ctx.fillText("Cost: 400 Coins & 3 Gems", px + 162, py + 136);
+
+  ctx.fillStyle = hasTgun ? '#333c57' : (canAffordTgun ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(px + 268, py + 114, 40, 24);
+  ctx.fillStyle = hasTgun ? '#9fadbc' : '#10121c';
+  ctx.font = 'bold 5.8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(hasTgun ? "OWNED" : "UNLOCK", px + 288, py + 124);
+  ctx.font = '5px monospace';
+  ctx.fillText(hasTgun ? "✓" : "-400C/3G", px + 288, py + 133);
 
   // Escape notification footer
   ctx.textAlign = 'center';
@@ -1016,12 +1145,14 @@ const drawClosetWindowModal = (w: number, h: number) => {
   // RIGHT COLUMN - GADGETS & COMPANIONS
   ctx.fillStyle = '#36e5f0';
   ctx.font = 'bold 7.5px monospace';
-  ctx.fillText("🛠️ TOOLS & ACTIVE COMPANIONS", px + 165, py + 38);
+  ctx.fillText("🛠️ TOOLS & ACTIVE COMPANIONS", px + 165, py + 33);
 
   const toolsList = [
-    { id: 'mouse_cursor', name: "Cursor Pointer Hand" },
-    { id: 'shamrock', name: "Clover Shamrock" },
-    { id: 'portal_gun', name: "Quantum Portal Gun" }
+    { id: 'mouse_cursor', name: "Cursor Pointer Hand 🖱️" },
+    { id: 'shamrock', name: "Clover Shamrock 🍀" },
+    { id: 'portal_gun', name: "Quantum Portal Gun 🔮" },
+    { id: 'hookshot', name: "Magnetic Hookshot 🪝" },
+    { id: 'toolgun', name: "Rope Toolgun 🔫" }
   ];
 
   for (let i = 0; i < toolsList.length; i++) {
@@ -1030,12 +1161,13 @@ const drawClosetWindowModal = (w: number, h: number) => {
     const hasU = engine.inventory.tools.includes(t.id);
 
     ctx.fillStyle = isEquipped ? '#73ef7d' : (hasU ? '#333c57' : '#10121c');
-    ctx.fillRect(px + 165, py + 46 + i * 18, 140, 15);
-    ctx.strokeRect(px + 165, py + 46 + i * 18, 140, 15);
+    ctx.fillRect(px + 165, py + 38 + i * 13, 140, 11);
+    ctx.strokeStyle = '#10121c';
+    ctx.strokeRect(px + 165, py + 38 + i * 13, 140, 11);
 
     ctx.fillStyle = isEquipped ? '#10121c' : (hasU ? '#ffffff' : '#566c86');
-    ctx.font = '6px monospace';
-    ctx.fillText(`${t.name} ${isEquipped ? '(HOLD)' : ''}`, px + 171, py + 56 + i * 18);
+    ctx.font = '5.8px monospace';
+    ctx.fillText(`${t.name} ${isEquipped ? '(HOLD)' : ''}`, px + 171, py + 46 + i * 13);
   }
 
   // PETS LISTING
@@ -1405,6 +1537,110 @@ const loop = () => {
         ctx.lineTo(engine.dragJoint.mouseX, engine.dragJoint.mouseY);
         ctx.stroke();
         ctx.setLineDash([]);
+      }
+
+      // Draw all active Ropes
+      for (const rope of engine.ropes) {
+        let p1x = 0, p1y = 0;
+        if (rope.obj1.type === 'wall') {
+          p1x = rope.obj1.x;
+          p1y = rope.obj1.y;
+        } else if (rope.obj1.type === 'player') {
+          p1x = engine.player.x + engine.player.width / 2;
+          p1y = engine.player.y + engine.player.height / 2;
+        } else if (rope.obj1.type === 'box') {
+          const b = engine.boxes.find(box => box.id === rope.obj1.id);
+          if (b) {
+            p1x = b.x + rope.obj1.x;
+            p1y = b.y + rope.obj1.y;
+          }
+        }
+
+        let p2x = 0, p2y = 0;
+        if (rope.obj2.type === 'wall') {
+          p2x = rope.obj2.x;
+          p2y = rope.obj2.y;
+        } else if (rope.obj2.type === 'player') {
+          p2x = engine.player.x + engine.player.width / 2;
+          p2y = engine.player.y + engine.player.height / 2;
+        } else if (rope.obj2.type === 'box') {
+          const b = engine.boxes.find(box => box.id === rope.obj2.id);
+          if (b) {
+            p2x = b.x + rope.obj2.x;
+            p2y = b.y + rope.obj2.y;
+          }
+        }
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = '#8b7355'; // Textured Rope Brown color
+        ctx.lineWidth = 1.8;
+        ctx.moveTo(p1x, p1y);
+        ctx.lineTo(p2x, p2y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffcd75';
+        ctx.beginPath();
+        ctx.arc(p1x, p1y, 2, 0, Math.PI * 2);
+        ctx.arc(p2x, p2y, 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Draw active Hookshot lines or cables
+      if (engine.hookshot.state !== 'idle') {
+        const px = engine.player.x + engine.player.width / 2;
+        const py = engine.player.y + engine.player.height / 2;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = '#b0c4de'; // Strong metal cable
+        ctx.lineWidth = 1.3;
+        ctx.moveTo(px, py);
+        ctx.lineTo(engine.hookshot.x, engine.hookshot.y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#36e5f0'; // Glowing magnetic energy head
+        ctx.beginPath();
+        ctx.arc(engine.hookshot.x, engine.hookshot.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Draw Toolgun Anchor selection preview vectors
+      if (engine.currentTool === 'toolgun' && engine.toolgunSelected) {
+        let pX = 0, pY = 0;
+        const s = engine.toolgunSelected;
+        if (s.type === 'wall') {
+          pX = s.x;
+          pY = s.y;
+        } else if (s.type === 'player') {
+          pX = engine.player.x + s.x;
+          pY = engine.player.y + s.y;
+        } else if (s.type === 'box') {
+          const b = engine.boxes.find(box => box.id === s.id);
+          if (b) {
+            pX = b.x + s.x;
+            pY = b.y + s.y;
+          }
+        }
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.strokeStyle = 'rgba(115, 239, 125, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 3]);
+        ctx.moveTo(pX, pY);
+        ctx.lineTo(engine.dragJoint.mouseX, engine.dragJoint.mouseY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        const scale = 1.0 + Math.sin(Date.now() * 0.015) * 0.25;
+        ctx.fillStyle = '#73ef7d';
+        ctx.beginPath();
+        ctx.arc(pX, pY, 3 * scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
 
       // Render interactive banners
