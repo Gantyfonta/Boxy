@@ -1,5 +1,6 @@
 import { Box, Player, LootItem, Particle, FloatingText, PhysicsWorld, BoxType } from './types';
 import { sound } from './sound';
+import { FarmPlantBed, CropInventoryStack, CROP_TYPES, CROP_SIZES, CROP_MUTATIONS, getCropSellValue, generateDePorcusStock, getFarmingBedsLayout } from './farming';
 
 const makeId = () => Math.random().toString(36).substring(2, 11);
 
@@ -77,7 +78,26 @@ export class GameEngine {
   public currentPet: string | null = null;
 
   // State Management
-  public gameMode: 'lobby' | 'game_run' | 'loading' = 'lobby';
+  public gameMode: 'main_menu' | 'lobby' | 'game_run' | 'loading' | 'farming' = 'main_menu';
+  
+  // Player keyboard inputs for physics engine calculations (especially ladder climb and farming)
+  public inputs = {
+    up: false,
+    down: false,
+    left: false,
+    right: false
+  };
+
+  // Dedicated farming room state persistence values
+  public farmingState = {
+    beds: getFarmingBedsLayout(),
+    inventory: [] as CropInventoryStack[],
+    shopStock: generateDePorcusStock(),
+    shopRestockTimer: 30, // 30 seconds interval
+    activePlantingBedId: null as number | null,
+    isDeporcusOpen: false,
+    deporcusRotation: 0
+  };
   public loadingProgress: number = 0;
   public loadingAction: () => void = () => {};
   public loadingText: string = "LOADING FACILITY SECTOR...";
@@ -194,7 +214,7 @@ export class GameEngine {
 
   constructor() {
     this.loadProfileFromStorage();
-    this.setLobbyMode();
+    this.gameMode = 'main_menu';
   }
 
   // Save/Load persistence system
@@ -233,6 +253,51 @@ export class GameEngine {
       if (this.inventory.pets.length === 0) {
         this.inventory.pets = [];
       }
+
+      // LOADING FARMING STATE
+      const savedFarmingBeds = localStorage.getItem('sector7_farm_beds');
+      if (savedFarmingBeds) this.farmingState.beds = JSON.parse(savedFarmingBeds);
+
+      const savedFarmingInventory = localStorage.getItem('sector7_farm_inventory');
+      if (savedFarmingInventory) this.farmingState.inventory = JSON.parse(savedFarmingInventory);
+
+      const savedFarmingStock = localStorage.getItem('sector7_farm_stock');
+      if (savedFarmingStock) this.farmingState.shopStock = JSON.parse(savedFarmingStock);
+
+      const savedFarmingRestock = localStorage.getItem('sector7_farm_restock');
+      if (savedFarmingRestock) this.farmingState.shopRestockTimer = parseFloat(savedFarmingRestock);
+
+      // Real-time Offline Progression updates
+      const savedLastTime = localStorage.getItem('sector7_farm_last_save');
+      if (savedLastTime) {
+        const elapsedSecs = (Date.now() - parseFloat(savedLastTime)) / 1000;
+        if (elapsedSecs > 1.5) {
+          // Advance growth timer on all growing beds
+          for (const bed of this.farmingState.beds) {
+            if (bed.plantedCropId && bed.growthProgress < 1.0) {
+              const crop = CROP_TYPES.find(c => c.id === bed.plantedCropId);
+              if (crop) {
+                const addedProgress = elapsedSecs / crop.growthTime;
+                bed.growthProgress = Math.min(1.0, bed.growthProgress + addedProgress);
+                if (bed.growthProgress >= 1.0) {
+                  bed.growthSecondsRemaining = 0;
+                } else {
+                  bed.growthSecondsRemaining = Math.max(0, bed.growthSecondsRemaining - elapsedSecs);
+                }
+              }
+            }
+          }
+          // Advance restock shop timer
+          if (this.farmingState.shopRestockTimer !== undefined) {
+            let remaining = this.farmingState.shopRestockTimer - elapsedSecs;
+            while (remaining < 0) {
+              this.farmingState.shopStock = generateDePorcusStock();
+              remaining += 30;
+            }
+            this.farmingState.shopRestockTimer = remaining;
+          }
+        }
+      }
     } catch (e) {
       console.warn("Storage reading bypassed", e);
     }
@@ -255,6 +320,13 @@ export class GameEngine {
 
       if (this.currentPet) localStorage.setItem('sector7_eq_pet', this.currentPet);
       else localStorage.removeItem('sector7_eq_pet');
+
+      // SAVING FARMING STATE
+      localStorage.setItem('sector7_farm_beds', JSON.stringify(this.farmingState.beds));
+      localStorage.setItem('sector7_farm_inventory', JSON.stringify(this.farmingState.inventory));
+      localStorage.setItem('sector7_farm_stock', JSON.stringify(this.farmingState.shopStock));
+      localStorage.setItem('sector7_farm_restock', this.farmingState.shopRestockTimer.toString());
+      localStorage.setItem('sector7_farm_last_save', Date.now().toString());
     } catch (e) {
       console.warn("Saving failure", e);
     }
@@ -1595,8 +1667,21 @@ export class GameEngine {
   public update() {
     this.updateCameraShake();
     
+    if (this.gameMode === 'main_menu') {
+      return;
+    }
+
     if (this.gameMode === 'loading') {
       this.updateLoading();
+      return;
+    }
+
+    if (this.gameMode === 'farming') {
+      this.updateFarmingRoom();
+      this.updatePlayerMovement();
+      this.updateParticles();
+      this.updateFloatingTexts();
+      this.updatePets();
       return;
     }
 
@@ -1636,18 +1721,64 @@ export class GameEngine {
 
   private updatePlayerMovement() {
     const p = this.player;
-    p.vy += this.world.gravity;
-    p.y += p.vy;
 
-    const groundY = this.world.height - 32;
-    if (p.y + p.height >= groundY) {
-      p.y = groundY - p.height;
-      if (p.vy > 1.5) {
-        sound.playLand();
-        this.spawnDust(p.x + p.width / 2, groundY, 3);
+    if (this.gameMode === 'farming') {
+      const onLadder = Math.abs((p.x + p.width/2) - 320) < 18;
+      
+      if (onLadder && (this.inputs.up || this.inputs.down)) {
+        if (this.inputs.up) {
+          p.vy = -2.2;
+        } else if (this.inputs.down) {
+          p.vy = 2.2;
+        }
+        p.onGround = false;
+        p.state = 'jump';
+        p.y += p.vy;
+      } else if (onLadder) {
+        // Suspend player on ladder
+        p.vy = 0;
+        p.onGround = true; // allow launching jumpers
+        p.state = 'idle';
+      } else {
+        p.vy += this.world.gravity;
+        p.y += p.vy;
       }
-      p.vy = 0;
-      p.onGround = true;
+
+      // Collisions check against 3 layers
+      const floors = [110, 220, 328];
+      let landed = false;
+      for (const fY of floors) {
+        if (p.vy >= 0 && (p.y + p.height - p.vy <= fY + 2.2) && (p.y + p.height >= fY - 2.2)) {
+          if (!onLadder || !this.inputs.down) {
+            p.y = fY - p.height;
+            if (p.vy > 1.5) {
+              sound.playLand();
+              this.spawnDust(p.x + p.width / 2, fY, 2);
+            }
+            p.vy = 0;
+            p.onGround = true;
+            landed = true;
+            break;
+          }
+        }
+      }
+      if (!landed && !onLadder) {
+        p.onGround = false;
+      }
+    } else {
+      p.vy += this.world.gravity;
+      p.y += p.vy;
+
+      const groundY = this.world.height - 32;
+      if (p.y + p.height >= groundY) {
+        p.y = groundY - p.height;
+        if (p.vy > 1.5) {
+          sound.playLand();
+          this.spawnDust(p.x + p.width / 2, groundY, 3);
+        }
+        p.vy = 0;
+        p.onGround = true;
+      }
     }
 
     if (p.x < 10) {
@@ -1675,13 +1806,279 @@ export class GameEngine {
         p.animFrame = (p.animFrame + 1) % 4;
       }
     } else {
-      p.state = p.grabbingBox ? 'grab_idle' : 'idle';
+      if (p.state !== 'jump') {
+        p.state = p.grabbingBox ? 'grab_idle' : 'idle';
+      }
       if (p.animTimer % 35 === 0) {
         p.animFrame = (p.animFrame + 1) % 2;
       }
     }
 
-    if (!p.onGround) p.state = 'jump';
+    if (!p.onGround && p.state !== 'jump') p.state = 'jump';
+  }
+
+  // --- DEDICATED FARMING ROOM CORE ENGINE ROUTINES ---
+
+  public setFarmingMode() {
+    this.gameMode = 'farming';
+    this.boxes = [];
+    this.lootItems = [];
+    this.particles = [];
+    this.floatingTexts = [];
+
+    // Place nicely on the bottom floor
+    this.player.x = 120;
+    this.player.y = 328 - this.player.height;
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.player.grabbingBox = null;
+
+    this.farmingState.activePlantingBedId = null;
+    this.farmingState.isDeporcusOpen = false;
+
+    this.spawnFloatingText("DEPORCUS'S GARDEN ENTERED! 🐖🌿", 320, 160, "#ffe385");
+    sound.playLand();
+    this.saveProfileToStorage();
+  }
+
+  private updateFarmingRoom() {
+    const dt = 1 / 60;
+
+    // Tick deporcus shop restock
+    this.farmingState.shopRestockTimer -= dt;
+    if (this.farmingState.shopRestockTimer <= 0) {
+      this.farmingState.shopStock = generateDePorcusStock();
+      this.farmingState.shopRestockTimer = 30;
+      this.spawnFloatingText("DEPORCUS RE-STOCKED THE BARN! 🐷🌾", 520, 260, "#ffe385");
+      sound.playUnlock();
+      this.saveProfileToStorage();
+    }
+
+    // Tick crops grown duration remaining
+    for (const bed of this.farmingState.beds) {
+      if (bed.unlocked && bed.plantedCropId && bed.growthProgress < 1.0) {
+        const crop = CROP_TYPES.find(c => c.id === bed.plantedCropId);
+        if (crop) {
+          bed.growthProgress = Math.min(1.0, bed.growthProgress + (dt / crop.growthTime));
+          bed.growthSecondsRemaining = Math.max(0, bed.growthSecondsRemaining - dt);
+        }
+      }
+    }
+
+    // Tick Deporcus rotation oscillating idle animation
+    this.farmingState.deporcusRotation = Math.sin(Date.now() * 0.005) * 0.09;
+  }
+
+  public purchasePlantBed(bedId: number) {
+    const bed = this.farmingState.beds.find(b => b.id === bedId);
+    if (!bed || bed.unlocked) return;
+
+    if (this.coins < bed.cost || this.gems < bed.gemsCost) {
+      sound.playLand();
+      this.spawnFloatingText("NOT ENOUGH FUNDS!", this.player.x + 12, this.player.y - 12, "#ff4500");
+      return;
+    }
+
+    this.coins -= bed.cost;
+    this.gems -= bed.gemsCost;
+    bed.unlocked = true;
+
+    sound.playUnlock();
+    this.spawnFloatingText("SOIL TILE UNLOCKED! 🌱🪚", this.player.x + 12, this.player.y - 12, "#73ef7d");
+    this.saveProfileToStorage();
+  }
+
+  public plantSeed(bedId: number, cropId: string) {
+    const bed = this.farmingState.beds.find(b => b.id === bedId);
+    if (!bed || !bed.unlocked || bed.plantedCropId) return;
+
+    const stackIdx = this.farmingState.inventory.findIndex(i => i.cropId === cropId && i.size === 'medium' && i.mutation === 'none' && i.count > 0);
+    if (stackIdx === -1) return;
+
+    this.farmingState.inventory[stackIdx].count--;
+    if (this.farmingState.inventory[stackIdx].count <= 0) {
+      this.farmingState.inventory.splice(stackIdx, 1);
+    }
+
+    const crop = CROP_TYPES.find(c => c.id === cropId);
+    if (!crop) return;
+
+    bed.plantedCropId = cropId;
+    bed.growthProgress = 0.0;
+    bed.growthSecondsRemaining = crop.growthTime;
+    bed.plantedTimestamp = Date.now();
+
+    sound.playUnlock();
+    this.spawnFloatingText(`PLANTED ${crop.name.toUpperCase()}! 🌱`, this.player.x + 12, this.player.y - 12, "#73ef7d");
+    this.saveProfileToStorage();
+  }
+
+  public harvestBed(bedId: number) {
+    const bed = this.farmingState.beds.find(b => b.id === bedId);
+    if (!bed || !bed.unlocked || !bed.plantedCropId || bed.growthProgress < 1.0) return;
+
+    const cropId = bed.plantedCropId;
+    const crop = CROP_TYPES.find(c => c.id === cropId);
+    if (!crop) return;
+
+    // Roll mutations (16% chance)
+    let mutation: 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double' = 'none';
+    if (Math.random() < 0.16) {
+      const muts = ['golden', 'spicy', 'radioactive', 'albino', 'double'] as const;
+      mutation = muts[Math.floor(Math.random() * muts.length)];
+    }
+
+    // Roll sizes
+    let size: 'small' | 'medium' | 'large' | 'gigantic' | 'cosmic' = 'medium';
+    const sizeRoll = Math.random();
+    if (sizeRoll < 0.35) size = 'small';
+    else if (sizeRoll < 0.70) size = 'medium';
+    else if (sizeRoll < 0.88) size = 'large';
+    else if (sizeRoll < 0.97) size = 'gigantic';
+    else size = 'cosmic';
+
+    const exist = this.farmingState.inventory.find(i => i.cropId === cropId && i.size === size && i.mutation === mutation);
+    if (exist) {
+      exist.count++;
+    } else {
+      this.farmingState.inventory.push({
+        cropId,
+        size,
+        mutation,
+        count: 1
+      });
+    }
+
+    bed.plantedCropId = null;
+    bed.growthProgress = 0.0;
+    bed.growthSecondsRemaining = 0;
+    bed.plantedTimestamp = null;
+
+    let rewardLabel = crop.name;
+    let floatColor = '#ffe385';
+    if (mutation !== 'none') {
+      const mutConf = CROP_MUTATIONS.find(m => m.id === mutation);
+      rewardLabel = `${mutConf?.label} ${size.toUpperCase()} ${crop.name}`;
+      floatColor = mutConf?.color || '#ffe385';
+    } else {
+      rewardLabel = `${size.toUpperCase()} ${crop.name}`;
+    }
+
+    sound.playUnlock();
+    // Star flares
+    for (let i = 0; i < 8; i++) {
+      this.particles.push({
+        id: makeId(),
+        type: 'star',
+        x: this.player.x + 12,
+        y: this.player.y + 16,
+        vx: Math.random() * 4 - 2,
+        vy: -Math.random() * 3 - 2,
+        color: floatColor,
+        size: Math.random() * 2.5 + 1.5,
+        life: 1.0,
+        decay: 0.04,
+        angle: Math.random() * Math.PI,
+        angularVelocity: 0.05
+      });
+    }
+
+    this.spawnFloatingText(`HARVESTED: ${rewardLabel.toUpperCase()}! 🎉`, this.player.x + 12, this.player.y - 12, floatColor);
+    this.saveProfileToStorage();
+  }
+
+  public buyCropSeed(cropId: string) {
+    const crop = CROP_TYPES.find(c => c.id === cropId);
+    if (!crop) return;
+
+    const stockCount = this.farmingState.shopStock[cropId] || 0;
+    if (stockCount <= 0) {
+      sound.playLand();
+      this.spawnFloatingText("OUT OF STOCK!", this.player.x + 12, this.player.y - 12, "#ff4500");
+      return;
+    }
+
+    const costCoins = crop.cost;
+    const costGems = crop.gemsCost || 0;
+
+    if (this.coins < costCoins || this.gems < costGems) {
+      sound.playLand();
+      this.spawnFloatingText("NOT ENOUGH FUNDS!", this.player.x + 12, this.player.y - 12, "#ff4500");
+      return;
+    }
+
+    this.coins -= costCoins;
+    this.gems -= costGems;
+    this.farmingState.shopStock[cropId]--;
+
+    const exist = this.farmingState.inventory.find(i => i.cropId === cropId && i.size === 'medium' && i.mutation === 'none');
+    if (exist) {
+      exist.count++;
+    } else {
+      this.farmingState.inventory.push({
+        cropId,
+        size: 'medium',
+        mutation: 'none',
+        count: 1
+      });
+    }
+
+    sound.playUnlock();
+    this.spawnFloatingText(`BOUGHT 1x ${crop.name.toUpperCase()} SEED!`, this.player.x + 12, this.player.y - 18, "#73ef7d");
+    this.saveProfileToStorage();
+  }
+
+  public sellCropStack(stackIdx: number) {
+    const stack = this.farmingState.inventory[stackIdx];
+    if (!stack || stack.count <= 0) return;
+
+    const payout = getCropSellValue(stack.cropId, stack.size, stack.mutation);
+    const stackCoins = payout.coins * stack.count;
+    const stackGems = payout.gems * stack.count;
+
+    this.coins += stackCoins;
+    this.gems += stackGems;
+
+    this.spawnFloatingText(`SOLD STACK FOR +${stackCoins}C / +${stackGems}G!`, this.player.x + 12, this.player.y - 12, "#73ef7d");
+    sound.playUnlock();
+
+    this.farmingState.inventory.splice(stackIdx, 1);
+    this.saveProfileToStorage();
+  }
+
+  public sellAllCrops() {
+    let totalCoins = 0;
+    let totalGems = 0;
+    let itemsSold = 0;
+
+    // We only sell crops that are mutated or have different sizes, or everything harvested to clean Silo
+    const keptSeeds: CropInventoryStack[] = [];
+    
+    for (const stack of this.farmingState.inventory) {
+      // Keep normal seeds so players don't accidentally sell all their planting material!
+      if (stack.size === 'medium' && stack.mutation === 'none') {
+        keptSeeds.push(stack);
+      } else {
+        const payout = getCropSellValue(stack.cropId, stack.size, stack.mutation);
+        totalCoins += payout.coins * stack.count;
+        totalGems += payout.gems * stack.count;
+        itemsSold += stack.count;
+      }
+    }
+
+    if (itemsSold === 0) {
+      sound.playLand();
+      this.spawnFloatingText("NO HARVESTED CROPS TO SELL!", this.player.x + 12, this.player.y - 12, "#ff4500");
+      return;
+    }
+
+    this.coins += totalCoins;
+    this.gems += totalGems;
+    this.farmingState.inventory = keptSeeds;
+
+    sound.playUnlock();
+    this.spawnFloatingText(`SOLD ALL: +${totalCoins} COINS & +${totalGems} GEMS! 💰`, this.player.x + 12, this.player.y - 18, "#ffe385");
+    this.saveProfileToStorage();
   }
 
   private updateCratesPhysics() {

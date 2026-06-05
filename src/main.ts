@@ -3,6 +3,7 @@ import { GameEngine, GameRarity } from './game/physics';
 import { sprites } from './game/sprites';
 import { sound } from './game/sound';
 import { BoxType } from './game/types';
+import { CROP_TYPES, CROP_SIZES, CROP_MUTATIONS, FarmPlantBed } from './game/farming';
 
 const makeId = () => Math.random().toString(36).substring(2, 11);
 
@@ -74,9 +75,49 @@ const handleKeyDown = (e: KeyboardEvent) => {
     e.preventDefault();
   }
 
-  // Double tap ignore check
+  // Handle Main Menu keys
+  if (engine.gameMode === 'main_menu') {
+    if (code === 'Digit1' || code === 'Numpad1') {
+      engine.setLobbyMode();
+      sound.playUnlock();
+    } else if (code === 'Digit2' || code === 'Numpad2') {
+      engine.setFarmingMode();
+      sound.playUnlock();
+    }
+    return;
+  }
+
+  // Handle Escape transitions
+  if (code === 'Escape') {
+    if (isShopOpen || isClosetOpen) {
+      isShopOpen = false;
+      isClosetOpen = false;
+      sound.playTick();
+      return;
+    }
+    if (engine.gameMode === 'farming') {
+      if (engine.farmingState.isDeporcusOpen) {
+        engine.farmingState.isDeporcusOpen = false;
+        sound.playTick();
+      } else if (engine.farmingState.activePlantingBedId !== null) {
+        engine.farmingState.activePlantingBedId = null;
+        sound.playTick();
+      } else {
+        engine.gameMode = 'main_menu';
+        sound.playTick();
+      }
+      return;
+    }
+    if (engine.gameMode === 'lobby' || engine.gameMode === 'game_run') {
+      engine.gameMode = 'main_menu';
+      sound.playTick();
+      return;
+    }
+  }
+
+  // Double tap ignore check for active lobby menus
   if (isShopOpen || isClosetOpen) {
-    if (code === 'Escape' || code === 'KeyE') {
+    if (code === 'KeyE') {
       isShopOpen = false;
       isClosetOpen = false;
       sound.playTick();
@@ -86,10 +127,57 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
   // Interactivity single tap check
   if (code === 'KeyE') {
+    // 🐖 Proximity checks inside Farming mode
+    if (engine.gameMode === 'farming') {
+      const px = engine.player.x + 12;
+      const py = engine.player.y + 16;
+
+      // Check near Deporcus
+      const distDep = Math.abs(px - 520);
+      if (distDep < 32 && py > 260) {
+        engine.farmingState.isDeporcusOpen = !engine.farmingState.isDeporcusOpen;
+        engine.farmingState.activePlantingBedId = null;
+        sound.playUnlock();
+        return;
+      }
+
+      // Check near some beds
+      const beds = [
+        { id: 0, x: 140, y: 110 }, { id: 1, x: 220, y: 110 }, { id: 2, x: 460, y: 110 },
+        { id: 3, x: 140, y: 220 }, { id: 4, x: 460, y: 220 }, { id: 5, x: 540, y: 220 },
+        { id: 6, x: 140, y: 328 }, { id: 7, x: 220, y: 328 }, { id: 8, x: 460, y: 328 },
+      ];
+      let closestBed = null;
+      let minDist = 25;
+      for (const b of beds) {
+        const dx = Math.abs(px - b.x);
+        const dy = Math.abs(py - b.y);
+        if (dy < 20 && dx < minDist) {
+          closestBed = b;
+          minDist = dx;
+        }
+      }
+
+      if (closestBed !== null) {
+        const bed = engine.farmingState.beds.find(x => x.id === closestBed.id);
+        if (bed) {
+          if (!bed.unlocked) {
+            engine.purchasePlantBed(bed.id);
+          } else if (!bed.plantedCropId) {
+            engine.farmingState.activePlantingBedId = bed.id;
+            engine.farmingState.isDeporcusOpen = false;
+            sound.playUnlock();
+          } else if (bed.growthProgress >= 1.0) {
+            engine.harvestBed(bed.id);
+          }
+        }
+        return;
+      }
+    }
+
     // Proximity checks inside Lobby mode
     if (engine.gameMode === 'lobby') {
       const px = engine.player.x + engine.player.width / 2;
-      const groundY = height - 32;
 
       // 1. Upgrades Shop Computer Proximity
       if (Math.abs(px - 210) < 32) {
@@ -114,6 +202,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
     // Default: try lift physical crate
     engine.tryGrabBox();
+    return;
   }
 
   if (code === 'KeyF') {
@@ -130,8 +219,10 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
 
   if (code === 'KeyR') {
-    engine.resetLevel();
-    sound.playUnlock();
+    if (engine.gameMode !== 'farming') {
+      engine.resetLevel();
+      sound.playUnlock();
+    }
   }
 };
 
@@ -178,6 +269,85 @@ const handleMouseDown = (e: MouseEvent) => {
   if (mx >= 12 && mx <= 70 && my >= 10 && my <= 26) {
     sound.enabled = !sound.enabled;
     sound.playTick();
+    return;
+  }
+
+  // --- MAIN MENU CARDS INTERACTIONS ---
+  if (engine.gameMode === 'main_menu') {
+    const c1X = 40;
+    const c2X = 330;
+    const cardY = 115;
+    const cardW = 270;
+    const cardH = 152;
+
+    if (mx >= c1X && mx <= c1X + cardW && my >= cardY && my <= cardY + cardH) {
+      engine.setLobbyMode();
+      sound.playUnlock();
+    } else if (mx >= c2X && mx <= c2X + cardW && my >= cardY && my <= cardY + cardH) {
+      engine.setFarmingMode();
+      sound.playUnlock();
+    }
+    return;
+  }
+
+  // --- FARMING SECTOR ROAD INTERACTIONS ---
+  if (engine.gameMode === 'farming') {
+    if (engine.farmingState.isDeporcusOpen) {
+      handleDeporcusClicks(mx, my);
+      return;
+    }
+    if (engine.farmingState.activePlantingBedId !== null) {
+      handleSeedPlantingClicks(mx, my);
+      return;
+    }
+
+    // Return menu top right button
+    if (mx >= 540 && mx <= 628 && my >= 4 && my <= 28) {
+      engine.gameMode = 'main_menu';
+      sound.playTick();
+      return;
+    }
+
+    // Deporcus Click
+    const distDep = Math.abs(mx - 520);
+    if (distDep < 32 && my > 260) {
+      const px = engine.player.x + 12;
+      const py = engine.player.y + 16;
+      if (Math.abs(px - 520) < 64 && py > 255) {
+        engine.farmingState.isDeporcusOpen = !engine.farmingState.isDeporcusOpen;
+        engine.farmingState.activePlantingBedId = null;
+        sound.playUnlock();
+        return;
+      }
+    }
+
+    // Soil Bed Clicks
+    const beds = [
+      { id: 0, x: 140, y: 110 }, { id: 1, x: 220, y: 110 }, { id: 2, x: 460, y: 110 },
+      { id: 3, x: 140, y: 220 }, { id: 4, x: 460, y: 220 }, { id: 5, x: 540, y: 220 },
+      { id: 6, x: 140, y: 328 }, { id: 7, x: 220, y: 328 }, { id: 8, x: 460, y: 328 },
+    ];
+    for (const b of beds) {
+      if (Math.abs(mx - b.x) < 22 && Math.abs(my - b.y) < 22) {
+        const px = engine.player.x + 12;
+        const py = engine.player.y + 16;
+        if (Math.abs(px - b.x) < 42 && Math.abs(py - b.y) < 42) {
+          const bed = engine.farmingState.beds.find(x => x.id === b.id);
+          if (bed) {
+            if (!bed.unlocked) {
+              engine.purchasePlantBed(bed.id);
+            } else if (!bed.plantedCropId) {
+              engine.farmingState.activePlantingBedId = bed.id;
+              engine.farmingState.isDeporcusOpen = false;
+              sound.playUnlock();
+            } else if (bed.growthProgress >= 1.0) {
+              engine.harvestBed(bed.id);
+            }
+          }
+        }
+        return;
+      }
+    }
     return;
   }
 
@@ -715,6 +885,521 @@ const drawWarehouseFloor = (w: number, h: number) => {
 };
 
 // Draw Cosmetics worn on robot's cute square head!
+// --- RETRO MAIN MENU GRAPHICS ---
+const drawMainMenu = () => {
+  // Cosmic grid backdrop
+  ctx.fillStyle = '#0f101d';
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.strokeStyle = 'rgba(54, 229, 240, 0.08)';
+  ctx.lineWidth = 1;
+  for (let cx = 0; cx < width; cx += 40) {
+    ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, height); ctx.stroke();
+  }
+  for (let cy = 0; cy < height; cy += 40) {
+    ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(width, cy); ctx.stroke();
+  }
+
+  // Large radiant icons
+  sprites.drawSprite(ctx, 'crate_wood', width / 2 - 40, 24, 24, 24);
+  sprites.drawSprite(ctx, 'deporcus_idle_1', width / 2 + 16, 26, 24, 24);
+
+  // Facility titles
+  ctx.font = 'bold 22px monospace';
+  ctx.fillStyle = '#ffcd75';
+  ctx.textAlign = 'center';
+  ctx.fillText("FACILITY SECTOR 7-B", width / 2, 78);
+
+  ctx.font = 'bold 7px monospace';
+  ctx.fillStyle = '#36e5f0';
+  ctx.fillText("INTEGRATED SANDBOX CARGO STATION & PLANTATION GARDEN", width / 2, 91);
+
+  // Layout cards
+  const c1X = 40;
+  const c2X = 330;
+  const cardY = 115;
+  const cardW = 270;
+  const cardH = 152;
+
+  const isOver1 = (engine.dragJoint.mouseX >= c1X && engine.dragJoint.mouseX <= c1X + cardW && engine.dragJoint.mouseY >= cardY && engine.dragJoint.mouseY <= cardY + cardH);
+  const isOver2 = (engine.dragJoint.mouseX >= c2X && engine.dragJoint.mouseX <= c2X + cardW && engine.dragJoint.mouseY >= cardY && engine.dragJoint.mouseY <= cardY + cardH);
+
+  // Card 1: SANDBOX WAREHOUSE
+  ctx.fillStyle = isOver1 ? '#181b2b' : '#0a0d16';
+  ctx.strokeStyle = isOver1 ? '#73ef7d' : '#223c4a';
+  ctx.lineWidth = 2;
+  ctx.fillRect(c1X, cardY, cardW, cardH);
+  ctx.strokeRect(c1X, cardY, cardW, cardH);
+
+  ctx.fillStyle = isOver1 ? '#73ef7d' : '#ffffff';
+  ctx.font = 'bold 9px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText("[1] WAREHOUSE CARGO WORKSPACE", c1X + 16, cardY + 28);
+
+  ctx.fillStyle = '#9fadbc';
+  ctx.font = '7px monospace';
+  ctx.fillText("• Stack crates, load the transport cargo truck.", c1X + 16, cardY + 54);
+  ctx.fillText("• Unlock Portal Gun, Hookshot and magnetic tools.", c1X + 16, cardY + 68);
+  ctx.fillText("• Fling crates with satisfying elastic spring physics.", c1X + 16, cardY + 82);
+  ctx.fillText("• Earn valuable coins & gemstones interactively.", c1X + 16, cardY + 96);
+
+  ctx.fillStyle = isOver1 ? '#73ef7d' : '#ffcd75';
+  ctx.font = 'bold 7.5px monospace';
+  ctx.fillText("CLICK OR PRESS [1] TO ENTER SECTOR WORKSPACE", c1X + 16, cardY + 128);
+
+  // Card 2: DEPORCUS FARMING GARDEN
+  ctx.fillStyle = isOver2 ? '#131e16' : '#060d09';
+  ctx.strokeStyle = isOver2 ? '#ffe385' : '#223c28';
+  ctx.fillRect(c2X, cardY, cardW, cardH);
+  ctx.strokeRect(c2X, cardY, cardW, cardH);
+
+  ctx.fillStyle = isOver2 ? '#ffe385' : '#ffffff';
+  ctx.font = 'bold 9px monospace';
+  ctx.fillText("[2] DEPORCUS'S PLANTATION GARDEN", c2X + 16, cardY + 28);
+
+  ctx.fillStyle = '#9fadbc';
+  ctx.font = '7px monospace';
+  ctx.fillText("• Trade crop seeds with Deporcus the pig farmer.", c2X + 16, cardY + 54);
+  ctx.fillText("• Grow 10 crop tiers (Wheat Stalk -> Golden Ravioli!)", c2X + 16, cardY + 68);
+  ctx.fillText("• Plants grow in REAL-TIME (offline while logged out!).", c2X + 16, cardY + 82);
+  ctx.fillText("• Harvest rare mutated sizes (Cosmic Radioactive etc).", c2X + 16, cardY + 96);
+
+  ctx.fillStyle = isOver2 ? '#ffe385' : '#73ef7d';
+  ctx.font = 'bold 7.5px monospace';
+  ctx.fillText("CLICK OR PRESS [2] TO ENTER COZY GARDEN", c2X + 16, cardY + 128);
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#223040';
+  ctx.font = '6px monospace';
+  ctx.fillText("FACILITY CORE SYSTEM ENG v3.60 // STABLE BUILD ONLINE", width / 2, height - 12);
+};
+
+// --- MULTI-FLOOR GARDEN GRAPHICS ---
+const drawFarmingRoomBackground = (w: number, h: number) => {
+  ctx.fillStyle = '#0f1711'; // ambient forest greenhouse dark canvas
+  ctx.fillRect(0, 0, w, h);
+
+  ctx.strokeStyle = '#1d3623';
+  ctx.globalAlpha = 0.16;
+  ctx.lineWidth = 1;
+  for (let x = 0; x < w; x += 16) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+  for (let y = 0; y < h; y += 16) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1.0;
+
+  // Render wooden center ladder spanning all 3 layers
+  for (let ly = 110; ly < 328; ly += 16) {
+    sprites.drawSprite(ctx, 'ladder_tile', 312, ly, 16, 16);
+  }
+
+  // Draw 3 Floor Platforms
+  const platforms = [110, 220, 328];
+  for (const fY of platforms) {
+    ctx.fillStyle = '#1e3f22'; // lush grass sod
+    ctx.strokeStyle = '#0e2411';
+    ctx.lineWidth = 2;
+
+    // Left slab
+    ctx.fillRect(0, fY, 304, 10);
+    ctx.strokeRect(0, fY, 304, 10);
+
+    // Right slab
+    ctx.fillRect(336, fY, w - 336, 10);
+    ctx.strokeRect(336, fY, w - 336, 10);
+
+    // Warm soil roots underneath
+    ctx.fillStyle = '#1c120c';
+    ctx.fillRect(0, fY + 10, 304, 3);
+    ctx.fillRect(336, fY + 10, w - 336, 3);
+  }
+
+  // Steel beams
+  ctx.fillStyle = '#0f1210';
+  ctx.fillRect(0, 0, 10, h);
+  ctx.fillRect(w - 10, 0, 10, h);
+};
+
+// Draw plant beds on layout coordinates
+const drawFarmingRoomBeds = (w: number, h: number) => {
+  const beds = [
+    { id: 0, x: 140, y: 110 }, { id: 1, x: 220, y: 110 }, { id: 2, x: 460, y: 110 },
+    { id: 3, x: 140, y: 220 }, { id: 4, x: 460, y: 220 }, { id: 5, x: 540, y: 220 },
+    { id: 6, x: 140, y: 328 }, { id: 7, x: 220, y: 328 }, { id: 8, x: 460, y: 328 },
+  ];
+
+  for (const b of beds) {
+    const bed = engine.farmingState.beds.find(x => x.id === b.id);
+    if (!bed) continue;
+
+    const px = b.x;
+    const py = b.y;
+
+    if (!bed.unlocked) {
+      // Locked Bed visual outline
+      sprites.drawSprite(ctx, 'crop_empty_bed', px - 12, py - 20, 24, 24, { tint: 'rgba(0,0,0,0.55)' });
+      
+      ctx.fillStyle = '#ffcd75';
+      ctx.font = 'bold 5px monospace';
+      ctx.textAlign = 'center';
+      const lockS = bed.gemsCost > 0 ? `🔒 ${bed.cost}C/${bed.gemsCost}G` : `🔒 ${bed.cost}C`;
+      ctx.fillText(lockS, px, py - 21);
+    } else {
+      // Unlocked Bed dirt block
+      sprites.drawSprite(ctx, 'crop_empty_bed', px - 12, py - 20, 24, 24);
+
+      if (bed.plantedCropId) {
+        const crop = CROP_TYPES.find(c => c.id === bed.plantedCropId);
+        if (crop) {
+          const cropSz = Math.round(14 * Math.max(0.4, bed.growthProgress));
+          let tintOverlay: string | undefined;
+
+          if (bed.mutation && bed.mutation !== 'none') {
+            const mConf = CROP_MUTATIONS.find(m => m.id === bed.mutation);
+            if (mConf) tintOverlay = mConf.tint;
+          }
+
+          sprites.drawSprite(ctx, crop.spriteName, px - cropSz / 2, py - 14 - cropSz / 2, cropSz, cropSz, {
+            tint: tintOverlay
+          });
+
+          // Draw progress
+          if (bed.growthProgress < 1.0) {
+            ctx.fillStyle = '#10121c';
+            ctx.fillRect(px - 10, py - 4, 20, 2.5);
+            ctx.fillStyle = '#73ef7d';
+            ctx.fillRect(px - 10, py - 4, 20 * bed.growthProgress, 2.5);
+          } else {
+            ctx.fillStyle = '#73ef7d';
+            ctx.font = 'bold 5.5px monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText("READY!", px, py - 4);
+          }
+        }
+      }
+    }
+  }
+};
+
+// Render Deporcus Standing
+const drawDeporcusStanding = (w: number, h: number) => {
+  const deporcusSprite = Math.floor(Date.now() / 460) % 2 === 0 ? 'deporcus_idle_1' : 'deporcus_idle_2';
+  
+  ctx.save();
+  ctx.translate(520 + 16, 328 - 32 + 16);
+  ctx.rotate(engine.farmingState.deporcusRotation || 0);
+  sprites.drawSprite(ctx, deporcusSprite, -16, -16, 32, 32);
+  ctx.restore();
+
+  // Nameboard tag
+  ctx.fillStyle = 'rgba(16, 20, 31, 0.7)';
+  ctx.fillRect(520 - 4, 328 - 38, 40, 8);
+  ctx.strokeStyle = '#df9c5c';
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(520 - 4, 328 - 38, 40, 8);
+
+  ctx.fillStyle = '#ffe385';
+  ctx.font = 'bold 5.2px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText("DEPORCUS 🐷", 520 + 16, 328 - 32);
+};
+
+// --- FARMING OVERLAY DIALOGS ---
+const drawDeporcusShopWindow = (w: number, h: number) => {
+  const panelW = 460;
+  const panelH = 240;
+  const px = (w - panelW) / 2;
+  const py = (h - panelH) / 2;
+
+  // Dark greenhouse screen panels
+  ctx.fillStyle = '#111813';
+  ctx.fillRect(px, py, panelW, panelH);
+  ctx.strokeStyle = '#080d09';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(px, py, panelW, panelH);
+
+  ctx.strokeStyle = '#24452c';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(px + 4, py + 4, panelW - 8, panelH - 8);
+
+  ctx.fillStyle = '#080d09';
+  ctx.fillRect(px + 4, py + 4, panelW - 8, 18);
+
+  ctx.fillStyle = '#ffcd75';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText("🐖 DEPORCUS'S BARN SEED STORE & HARVEST SILO", px + 12, py + 15);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#ef7d57';
+  ctx.fillText("[X] CLOSE", px + panelW - 12, py + 15);
+
+  const colW = 212;
+  const leftColX = px + 10;
+  const rightColX = px + colW + 28;
+
+  // LEFT COLUMN: BUY SEEDS
+  ctx.fillStyle = '#080d09';
+  ctx.fillRect(leftColX, py + 26, colW, panelH - 36);
+  ctx.strokeStyle = '#24452c';
+  ctx.strokeRect(leftColX, py + 26, colW, panelH - 36);
+
+  ctx.fillStyle = '#36e5f0';
+  ctx.font = 'bold 7.2px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText("⭐ DEPORCUS SEED STAND (CLICK BUY)", leftColX + colW / 2, py + 38);
+
+  ctx.textAlign = 'left';
+  CROP_TYPES.forEach((crop, idx) => {
+    const rowY = py + 45 + idx * 17;
+    const stock = engine.farmingState.shopStock[crop.id] || 0;
+
+    ctx.fillStyle = stock > 0 ? '#101a13' : '#1e1111';
+    ctx.fillRect(leftColX + 4, rowY, colW - 8, 15);
+    ctx.strokeStyle = stock > 0 ? '#1c4a24' : '#5c1f1f';
+    ctx.strokeRect(leftColX + 4, rowY, colW - 8, 15);
+
+    ctx.fillStyle = crop.color;
+    ctx.font = 'bold 6.5px monospace';
+    ctx.fillText(crop.name, leftColX + 8, rowY + 10);
+
+    ctx.font = '6px monospace';
+    if (stock > 0) {
+      ctx.fillStyle = '#73ef7d';
+      ctx.fillText(`QTY: ${stock}`, leftColX + 115, rowY + 10);
+    } else {
+      ctx.fillStyle = '#ef7d57';
+      ctx.fillText(`OUT OF STOCK`, leftColX + 115, rowY + 10);
+    }
+
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 6px monospace';
+    if (crop.gemsCost > 0) {
+      ctx.fillStyle = '#73ef7d';
+      ctx.fillText(`${crop.cost}C/${crop.gemsCost}G`, leftColX + colW - 8, rowY + 10);
+    } else {
+      ctx.fillStyle = '#ffe385';
+      ctx.fillText(`${crop.cost}C`, leftColX + colW - 8, rowY + 10);
+    }
+    ctx.textAlign = 'left';
+  });
+
+  // RIGHT COLUMN: STORAGE SILO
+  ctx.fillStyle = '#080d09';
+  ctx.fillRect(rightColX, py + 26, colW, panelH - 36);
+  ctx.strokeStyle = '#24452c';
+  ctx.strokeRect(rightColX, py + 26, colW, panelH - 36);
+
+  ctx.fillStyle = '#ffcd75';
+  ctx.font = 'bold 7.2px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText("🌾 YOUR SILO BARN INVENTORY", rightColX + colW / 2, py + 38);
+
+  ctx.textAlign = 'left';
+  if (engine.farmingState.inventory.length === 0) {
+    ctx.fillStyle = '#566c86';
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText("(SILO BARN EMPTY -- PLANT SOIL)", rightColX + colW / 2, py + 100);
+  } else {
+    const visibleRowS = engine.farmingState.inventory.slice(0, 9);
+    visibleRowS.forEach((stack, idx) => {
+      const rowY = py + 45 + idx * 17;
+      const crop = CROP_TYPES.find(c => c.id === stack.cropId);
+      if (!crop) return;
+
+      ctx.fillStyle = '#111512';
+      ctx.fillRect(rightColX + 4, rowY, colW - 8, 15);
+      ctx.strokeStyle = '#24452c';
+      ctx.strokeRect(rightColX + 4, rowY, colW - 8, 15);
+
+      const labelTxt = `${stack.count}x [${stack.size.substring(0,3).toUpperCase()}] ${crop.name}`;
+      ctx.fillStyle = crop.color;
+      ctx.font = 'bold 5.5px monospace';
+      ctx.fillText(labelTxt, rightColX + 8, rowY + 10);
+
+      // Mutation tags
+      if (stack.mutation !== 'none') {
+        const mConf = CROP_MUTATIONS.find(m => m.id === stack.mutation);
+        ctx.fillStyle = mConf?.color || '#cc66ff';
+        ctx.font = 'bold 4.5px monospace';
+        ctx.fillText(stack.mutation.toUpperCase() + " ✨", rightColX + 115, rowY + 10);
+      }
+
+      ctx.fillStyle = '#a24b31';
+      ctx.fillRect(rightColX + colW - 40, rowY + 2, 34, 11);
+      ctx.strokeStyle = '#10121c';
+      ctx.strokeRect(rightColX + colW - 40, rowY + 2, 34, 11);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 5.5px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText("SELL", rightColX + colW - 23, rowY + 10);
+      ctx.textAlign = 'left';
+    });
+  }
+
+  ctx.fillStyle = '#9fadbc';
+  ctx.font = '6px monospace';
+  const remSec = Math.ceil(engine.farmingState.shopRestockTimer);
+  ctx.fillText(`• BARN RE-STOCK TICK COUNT: ${remSec}s`, px + 12, py + panelH - 22);
+
+  ctx.fillStyle = '#73ef7d';
+  ctx.fillRect(rightColX + 4, py + panelH - 26, colW - 8, 14);
+  ctx.strokeStyle = '#10121c';
+  ctx.strokeRect(rightColX + 4, py + panelH - 26, colW - 8, 14);
+
+  ctx.fillStyle = '#10121c';
+  ctx.font = 'bold 6.5px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText("SELL ALL HARVEST CROPS (KEEPS SEED PACKS)", rightColX + colW / 2, py + panelH - 17);
+};
+
+// Draw seed planting choice modal
+const drawSeedPlantingWindow = (w: number, h: number) => {
+  const panelW = 320;
+  const panelH = 180;
+  const px = (w - panelW) / 2;
+  const py = (h - panelH) / 2;
+
+  ctx.fillStyle = '#1e110b';
+  ctx.fillRect(px, py, panelW, panelH);
+  ctx.strokeStyle = '#10121c';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(px, py, panelW, panelH);
+
+  ctx.strokeStyle = '#a24b31';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(px + 4, py + 4, panelW - 8, panelH - 8);
+
+  ctx.fillStyle = '#1c110b';
+  ctx.fillRect(px + 4, py + 4, panelW - 8, 18);
+
+  ctx.fillStyle = '#ffe385';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText("🌱 SELECT SEED HARVEST FROM SILO", px + 12, py + 15);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#ef7d57';
+  ctx.fillText("[ESC] CANCEL", px + panelW - 12, py + 15);
+
+  const seeds = engine.farmingState.inventory.filter(i => i.size === 'medium' && i.mutation === 'none' && i.count > 0);
+
+  ctx.textAlign = 'center';
+  if (seeds.length === 0) {
+    ctx.fillStyle = '#ffe385';
+    ctx.font = 'bold 7px monospace';
+    ctx.fillText("NO SEED PACKS IN BARN SILO!", px + panelW / 2, py + 70);
+    ctx.fillStyle = '#9fadbc';
+    ctx.font = '6px monospace';
+    ctx.fillText("Approach and buy seed crops from Farmer", px + panelW / 2, py + 95);
+    ctx.fillText("Deporcus on the bottom deck!", px + panelW / 2, py + 110);
+  } else {
+    ctx.textAlign = 'left';
+    seeds.slice(0, 7).forEach((seed, idx) => {
+      const crop = CROP_TYPES.find(c => c.id === seed.cropId);
+      if (!crop) return;
+
+      const rowY = py + 30 + idx * 17;
+      ctx.fillStyle = '#10121c';
+      ctx.fillRect(px + 10, rowY, panelW - 20, 15);
+      ctx.strokeStyle = '#a24b31';
+      ctx.strokeRect(px + 10, rowY, panelW - 20, 15);
+
+      ctx.fillStyle = crop.color;
+      ctx.font = 'bold 7.2px monospace';
+      ctx.fillText(`${crop.name} (${seed.count} pods)`, px + 16, rowY + 11);
+
+      ctx.fillStyle = '#73ef7d';
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 6px monospace';
+      ctx.fillText("PLANT NOW 🌱", px + panelW - 16, rowY + 10);
+      ctx.textAlign = 'left';
+    });
+  }
+};
+
+// --- DIALOGS INTERACTIVE CLICKS CHECK ---
+const handleDeporcusClicks = (mx: number, my: number) => {
+  const panelW = 460;
+  const panelH = 240;
+  const px = (width - panelW) / 2;
+  const py = (height - panelH) / 2;
+
+  // Close X
+  if (mx >= px + panelW - 60 && mx <= px + panelW - 4 && my >= py + 4 && my <= py + 22) {
+    engine.farmingState.isDeporcusOpen = false;
+    sound.playTick();
+    return;
+  }
+
+  const colW = 212;
+  const leftColX = px + 10;
+  const rightColX = px + colW + 28;
+
+  // Click on Seed Stand (Left column rows)
+  if (mx >= leftColX && mx <= leftColX + colW) {
+    CROP_TYPES.forEach((crop, idx) => {
+      const rowY = py + 45 + idx * 17;
+      if (my >= rowY && my <= rowY + 15) {
+        engine.buyCropSeed(crop.id);
+      }
+    });
+    return;
+  }
+
+  // Click Sell individuals (Right column rows)
+  if (mx >= rightColX && mx <= rightColX + colW) {
+    // If Sell All Crops button clicked
+    if (my >= py + panelH - 26 && my <= py + panelH - 12) {
+      engine.sellAllCrops();
+      return;
+    }
+
+    const visibleInventory = engine.farmingState.inventory.slice(0, 9);
+    visibleInventory.forEach((stack, idx) => {
+      const rowY = py + 45 + idx * 17;
+      // Sell button coordinates
+      if (mx >= rightColX + colW - 44 && mx <= rightColX + colW - 4 && my >= rowY && my <= rowY + 15) {
+        // Find index of stack in actual inventory
+        const origIdx = engine.farmingState.inventory.findIndex(x => x.cropId === stack.cropId && x.size === stack.size && x.mutation === stack.mutation);
+        if (origIdx !== -1) {
+          engine.sellCropStack(origIdx);
+        }
+      }
+    });
+  }
+};
+
+const handleSeedPlantingClicks = (mx: number, my: number) => {
+  const panelW = 320;
+  const panelH = 180;
+  const px = (width - panelW) / 2;
+  const py = (height - panelH) / 2;
+
+  // Close Cancel
+  if (mx >= px + panelW - 80 && mx <= px + panelW - 4 && my >= py + 4 && my <= py + 22) {
+    engine.farmingState.activePlantingBedId = null;
+    sound.playTick();
+    return;
+  }
+
+  const sId = engine.farmingState.activePlantingBedId;
+  if (sId === null) return;
+
+  const seeds = engine.farmingState.inventory.filter(i => i.size === 'medium' && i.mutation === 'none' && i.count > 0);
+  seeds.slice(0, 7).forEach((seed, idx) => {
+    const rowY = py + 30 + idx * 17;
+    if (mx >= px + 10 && mx <= px + panelW - 10 && my >= rowY && my <= rowY + 15) {
+      engine.plantSeed(sId, seed.cropId);
+      engine.farmingState.activePlantingBedId = null;
+    }
+  });
+};
+
 const drawWornCosmetics = (px: number, py: number, flipX: boolean) => {
   if (!engine.currentCosmetic) return;
 
@@ -808,13 +1493,19 @@ const drawInteractiveBannersAndHUD = (w: number, h: number) => {
   ctx.font = 'bold 7px monospace';
   ctx.fillStyle = '#ffcd75';
   ctx.textAlign = 'left';
-  const prefix = engine.gameMode === 'lobby' ? '📂 LOBBY' : '🛠️ CARGO HARVEST';
+  
+  let prefix = '📂 LOBBY';
+  if (engine.gameMode === 'game_run') prefix = '🛠️ CARGO HARVEST';
+  else if (engine.gameMode === 'farming') prefix = '🐖 DEPORCUS\'S GARDEN';
   ctx.fillText(`${prefix} | COINS: ${engine.coins} | GEMS: ${engine.gems}`, 22, 18);
 
   ctx.textAlign = 'right';
   if (engine.gameMode === 'game_run') {
     ctx.fillStyle = '#73ef7d';
     ctx.fillText(`TRUCK CAPACITY: ${engine.truckCargoCount}/${engine.getTruckCapacity()}`, w - 22, 18);
+  } else if (engine.gameMode === 'farming') {
+    ctx.fillStyle = '#ef7d57';
+    ctx.fillText(`[ESC] RETREAT GO MAIN MENU`, w - 22, 18);
   } else {
     ctx.fillStyle = '#9fadbc';
     ctx.fillText(`TRUCK RESERVOID: ${engine.truckCargo.length} CRATES`, w - 22, 18);
@@ -831,6 +1522,44 @@ const drawInteractiveBannersAndHUD = (w: number, h: number) => {
   ctx.fillStyle = '#f4f4f4';
   ctx.font = '6px monospace';
   ctx.fillText(sound.enabled ? '🔊 SOUND' : '🔇 MUTED', w / 2, 18);
+
+  // Active floating prompt warnings inside Farming Mode
+  if (engine.gameMode === 'farming') {
+    const px = engine.player.x + 12;
+    const py = engine.player.y + 16;
+
+    // Deporcus talk bubble
+    const distDep = Math.abs(px - 520);
+    if (distDep < 32 && py > 260) {
+      drawKeyInteractiveBubble(520, 260, "[E] OPEN DEPORCUS SHOP STAND");
+    }
+
+    // Beds proximity
+    const beds = [
+      { id: 0, x: 140, y: 110 }, { id: 1, x: 220, y: 110 }, { id: 2, x: 460, y: 110 },
+      { id: 3, x: 140, y: 220 }, { id: 4, x: 460, y: 220 }, { id: 5, x: 540, y: 220 },
+      { id: 6, x: 140, y: 328 }, { id: 7, x: 220, y: 328 }, { id: 8, x: 460, y: 328 },
+    ];
+    for (const b of beds) {
+      if (Math.abs(py - b.y) < 22 && Math.abs(px - b.x) < 25) {
+        const bed = engine.farmingState.beds.find(x => x.id === b.id);
+        if (bed) {
+          if (!bed.unlocked) {
+            const labelStr = bed.gemsCost > 0 ? `[E] TIL SOIL BED (${bed.cost}C/${bed.gemsCost}G)` : `[E] TIL SOIL BED (${bed.cost} Coins)`;
+            drawKeyInteractiveBubble(b.x, b.y - 12, labelStr);
+          } else if (!bed.plantedCropId) {
+            drawKeyInteractiveBubble(b.x, b.y - 12, "[E] PLANT SEED PODS");
+          } else if (bed.growthProgress < 1.0) {
+            const crop = CROP_TYPES.find(c => c.id === bed.plantedCropId);
+            const pct = Math.floor(bed.growthProgress * 100);
+            drawKeyInteractiveBubble(b.x, b.y - 12, `${crop?.name.toUpperCase()}: ${pct}%`);
+          } else {
+            drawKeyInteractiveBubble(b.x, b.y - 12, "[E] REAP MUTANT HARVEST 🌾");
+          }
+        }
+      }
+    }
+  }
 
   // Active floating prompt warnings inside Lobby
   if (engine.gameMode === 'lobby') {
@@ -865,7 +1594,9 @@ const drawInteractiveBannersAndHUD = (w: number, h: number) => {
   ctx.textAlign = 'center';
   
   let infoTip = "KEYS: [A/D/Arrows] Run | [W/Space/Up] Jump | [Q] Open unboxed boxes | Shift+Click spawns custom crates!";
-  if (engine.currentTool === 'portal_gun') {
+  if (engine.gameMode === 'farming') {
+    infoTip = "🌾 GO COZY GARDEN: [W/S] Climb ladder traversing layers | [A/D] Walk | Tap [E] or Click beds/Deporcus to trade!";
+  } else if (engine.currentTool === 'portal_gun') {
     infoTip = "🔮 PORTAL GUN ACTIVE: [Left-Click] shoots ORANGE portal, [Right-Click] shoots BLUE portal!";
   } else if (engine.currentTool === 'mouse_cursor') {
     infoTip = "🖱️ MOUSE HAND ACTIVE: Click & drag physics boxes on the ground to stack or fling them!";
@@ -1348,8 +2079,113 @@ const loop = () => {
     ctx.imageSmoothingEnabled = false;
 
     // Render different modes
-    if (engine.gameMode === 'loading') {
+    if (engine.gameMode === 'main_menu') {
+      drawMainMenu();
+    } else if (engine.gameMode === 'loading') {
       drawLoadingScreen(width, height);
+    } else if (engine.gameMode === 'farming') {
+      drawFarmingRoomBackground(width, height);
+      drawFarmingRoomBeds(width, height);
+      drawDeporcusStanding(width, height);
+
+      // Player character setup
+      let playerSprite = 'player_idle_1';
+      if (p.state === 'walk') {
+        const walkFrames = ['player_walk_1', 'player_walk_2', 'player_walk_3', 'player_walk_4'];
+        playerSprite = walkFrames[p.animFrame] || 'player_walk_1';
+      } else if (p.state === 'grab_idle' || p.state === 'grab_walk') {
+        playerSprite = 'player_carry_idle';
+      } else if (p.state === 'jump') {
+        playerSprite = p.grabbingBox ? 'player_carry_idle' : 'player_jump';
+      }
+
+      // Core Player Draw
+      sprites.drawSprite(ctx, playerSprite, p.x, p.y, p.width, p.height, {
+        flipX: p.facing === 'left'
+      });
+
+      // Worn Costume (Hat/Glasses/Hair/Crown) & Carried Tool overlays
+      drawWornCosmetics(p.x, p.y, p.facing === 'left');
+      drawCarriedTool(p.x, p.y, p.facing === 'left');
+
+      // Trail companion Pet if active
+      if (engine.currentPet) {
+        sprites.drawSprite(ctx, `pet_${engine.currentPet}`, engine.petX, engine.petY, 16, 16, {
+          flipX: p.facing === 'left'
+        });
+      }
+
+      // Particles physics
+      for (const part of engine.particles) {
+        ctx.save();
+        ctx.globalAlpha = part.life;
+
+        if (part.type === 'smoke') {
+          ctx.beginPath();
+          ctx.fillStyle = part.color;
+          ctx.arc(part.x, part.y, part.size * (1.5 - part.life * 0.5), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (part.type === 'fire') {
+          ctx.beginPath();
+          ctx.fillStyle = part.color;
+          ctx.arc(part.x, part.y, part.size * part.life, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (part.type === 'shockwave') {
+          ctx.beginPath();
+          ctx.strokeStyle = part.color;
+          ctx.lineWidth = 1.5;
+          ctx.arc(part.x, part.y, part.size * (1.0 - part.life) * 4.5, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (part.type === 'star' || part.type === 'sparkle') {
+          ctx.translate(part.x, part.y);
+          ctx.rotate(part.angle);
+          ctx.fillStyle = part.color;
+          const sz = part.size;
+          ctx.beginPath();
+          ctx.moveTo(0, -sz);
+          ctx.lineTo(sz * 0.3, -sz * 0.3);
+          ctx.lineTo(sz, 0);
+          ctx.lineTo(sz * 0.3, sz * 0.3);
+          ctx.lineTo(0, sz);
+          ctx.lineTo(-sz * 0.3, sz * 0.3);
+          ctx.lineTo(-sz, 0);
+          ctx.lineTo(-sz * 0.3, -sz * 0.3);
+          ctx.closePath();
+          ctx.fill();
+        } else if (part.type === 'wood_splinter') {
+          ctx.translate(part.x, part.y);
+          ctx.rotate(part.angle);
+          ctx.fillStyle = part.color;
+          ctx.fillRect(-part.size / 2, -1, part.size, 2);
+        }
+
+        ctx.restore();
+      }
+
+      // Floating text popups
+      ctx.textAlign = 'center';
+      for (const txt of engine.floatingTexts) {
+        ctx.fillStyle = 'rgba(16, 20, 31, 0.82)';
+        const tW = ctx.measureText(txt.text).width + 6;
+        ctx.fillRect(txt.x - tW / 2, txt.y - 10, tW, 12);
+
+        ctx.fillStyle = txt.color;
+        ctx.font = 'bold 7.5px monospace';
+        ctx.fillText(txt.text, txt.x, txt.y - 1);
+      }
+
+      // Render interactive banners
+      drawInteractiveBannersAndHUD(width, height);
+
+      // Overlay Shop Popup Menu if open
+      if (engine.farmingState.isDeporcusOpen) {
+        drawDeporcusShopWindow(width, height);
+      }
+
+      // Overlay Seeding Popup if open
+      if (engine.farmingState.activePlantingBedId !== null) {
+        drawSeedPlantingWindow(width, height);
+      }
     } else {
       // Render sandbox workspace backdrop
       drawWarehouseBackground(width, height);
