@@ -20,7 +20,7 @@ export interface PortalBullet {
   vy: number;
 }
 
-export type GameRarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type GameRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
 export interface GameBox extends Box {
   rarity: GameRarity;
@@ -77,6 +77,17 @@ export class GameEngine {
   public currentTool: string | null = null;
   public currentPet: string | null = null;
   public equippedCrops: any[] = [];
+  public plasmaBullets: {
+    id: string;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    radius: number;
+    color: string;
+    life: number;
+  }[] = [];
+  private isClimbingLadder: boolean = false;
 
   // State Management
   public gameMode: 'main_menu' | 'lobby' | 'game_run' | 'loading' | 'farming' = 'main_menu';
@@ -494,6 +505,8 @@ export class GameEngine {
       newBox.customColor = 'rgba(206, 95, 252, 0.4)'; // deep violet wash
     } else if (rarity === 'legendary') {
       newBox.customColor = 'rgba(255, 205, 117, 0.4)'; // gold yellow wash
+    } else if (rarity === 'mythic') {
+      newBox.customColor = 'rgba(255, 30, 80, 0.55)'; // glowing fiery crimson wash
     }
 
     this.boxes.push(newBox);
@@ -528,6 +541,36 @@ export class GameEngine {
 
       // Recoil
       this.player.vx -= (dx / dist) * 0.8;
+    }
+  }
+
+  public shootPlasmaBlaster(targetX: number, targetY: number) {
+    if (this.currentTool !== 'plasma_blaster') return;
+
+    sound.playTone(440, 680, 0.12, "sawtooth", 0.3);
+
+    const px = this.player.x + this.player.width / 2;
+    const py = this.player.y + 10;
+    
+    const dx = targetX - px;
+    const dy = targetY - py;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist > 2) {
+      const speed = 8.5;
+      this.plasmaBullets.push({
+        id: makeId(),
+        x: px,
+        y: py,
+        vx: (dx / dist) * speed,
+        vy: (dy / dist) * speed,
+        radius: 6.0,
+        color: '#ff1e50',
+        life: 1.0
+      });
+
+      this.player.vx -= (dx / dist) * 1.4;
+      this.player.vy -= (dy / dist) * 1.0;
     }
   }
 
@@ -978,6 +1021,110 @@ export class GameEngine {
     }
   }
 
+  private updatePlasmaBullets() {
+    for (let i = this.plasmaBullets.length - 1; i >= 0; i--) {
+      const b = this.plasmaBullets[i];
+      b.vy += 0.08; // gravity-bound curves
+      b.x += b.vx;
+      b.y += b.vy;
+
+      if (Math.random() < 0.4) {
+        this.particles.push({
+          id: makeId(),
+          type: 'sparkle',
+          x: b.x,
+          y: b.y,
+          vx: Math.random() * 2 - 1,
+          vy: Math.random() * 2 - 1,
+          color: '#ff1e50',
+          size: Math.random() * 2.5 + 1.0,
+          life: 0.8,
+          decay: 0.06,
+          angle: 0,
+          angularVelocity: 0
+        });
+      }
+
+      let exploded = false;
+      const groundY = this.gameMode === 'farming' ? 328 : this.world.height - 32;
+
+      if (b.x < 10 || b.x > this.world.width - 10 || b.y >= groundY) {
+        exploded = true;
+      }
+
+      for (const box of this.boxes) {
+        if (!box.isOpened && Math.hypot(b.x - (box.x + box.width / 2), b.y - (box.y + box.height / 2)) < 18) {
+          box.health -= 2;
+          if (box.health <= 0) {
+            this.openBox(box);
+          }
+          exploded = true;
+          break;
+        }
+      }
+
+      if (this.gameMode === 'farming') {
+        const beds = [
+          { id: 0, x: 140, y: 110 }, { id: 1, x: 220, y: 110 }, { id: 2, x: 460, y: 110 },
+          { id: 3, x: 140, y: 220 }, { id: 4, x: 460, y: 220 }, { id: 5, x: 540, y: 220 },
+          { id: 6, x: 140, y: 328 }, { id: 7, x: 220, y: 328 }, { id: 8, x: 460, y: 328 },
+        ];
+        for (const bedLoc of beds) {
+          if (Math.hypot(b.x - bedLoc.x, b.y - bedLoc.y) < 28) {
+            const bed = this.farmingState.beds.find(x => x.id === bedLoc.id);
+            if (bed && bed.unlocked && bed.plantedCropId && bed.growthProgress < 1.0) {
+              bed.growthProgress = Math.min(1.0, bed.growthProgress + 0.18);
+              this.spawnFloatingText("GROWTH CHARGED! ⚡", bedLoc.x, bedLoc.y - 15, "#ffe385");
+              exploded = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (exploded) {
+        sound.playTone(180, 80, 0.25, "sawtooth", 0.35);
+        this.cameraShake = Math.max(this.cameraShake, 6);
+        
+        this.particles.push({
+          id: makeId(),
+          type: 'shockwave',
+          x: b.x,
+          y: b.y,
+          vx: 0,
+          vy: 0,
+          color: '#ff1e50',
+          size: 4.0,
+          life: 1.0,
+          decay: 0.05,
+          angle: 0,
+          angularVelocity: 0
+        });
+
+        for (let s = 0; s < 12; s++) {
+          const sparkAngle = Math.random() * Math.PI * 2;
+          const sparkSp = Math.random() * 4.5 + 1.5;
+          this.particles.push({
+            id: makeId(),
+            type: 'fire',
+            x: b.x,
+            y: b.y,
+            vx: Math.cos(sparkAngle) * sparkSp,
+            vy: Math.sin(sparkAngle) * sparkSp,
+            color: Math.random() < 0.5 ? '#ffe385' : '#ff1e50',
+            size: Math.random() * 3.5 + 1.5,
+            life: 1.0,
+            decay: 0.06,
+            angle: 0,
+            angularVelocity: 0
+          });
+        }
+
+        this.plasmaBullets.splice(i, 1);
+      }
+    }
+  }
+
   private updatePortalBullets() {
     this.portalBullets = this.portalBullets.filter(b => {
       // Step position
@@ -1167,7 +1314,8 @@ export class GameEngine {
       common: 'wood',
       rare: 'metal',
       epic: 'present',
-      legendary: 'hover'
+      legendary: 'hover',
+      mythic: 'hover'
     };
     const bType = typeMap[rarity] || 'wood';
 
@@ -1197,13 +1345,15 @@ export class GameEngine {
 
       if (hasShamrock) {
         // Boosted prestige weights!
-        if (rng < 0.15) rType = 'legendary';
-        else if (rng < 0.50) rType = 'epic';
-        else if (rng < 0.85) rType = 'rare';
+        if (rng < 0.05) rType = 'mythic';
+        else if (rng < 0.20) rType = 'legendary';
+        else if (rng < 0.55) rType = 'epic';
+        else if (rng < 0.88) rType = 'rare';
         else rType = 'common';
       } else {
         // Vanilla weights
-        if (rng < 0.03) rType = 'legendary';
+        if (rng < 0.005) rType = 'mythic';
+        else if (rng < 0.03) rType = 'legendary';
         else if (rng < 0.15) rType = 'epic';
         else if (rng < 0.40) rType = 'rare';
         else rType = 'common';
@@ -1216,7 +1366,8 @@ export class GameEngine {
         common: 'wood',
         rare: 'metal',
         epic: 'present',
-        legendary: 'hover'
+        legendary: 'hover',
+        mythic: 'hover'
       };
       
       this.spawnCrateAt(this.craneX - 12, this.craneY + 12, mapBoxTypes[rType], rType);
@@ -1262,6 +1413,7 @@ export class GameEngine {
         if (gBox.rarity === 'rare') overlayColor = '#4fa9ff';
         if (gBox.rarity === 'epic') overlayColor = '#ce5ffc';
         if (gBox.rarity === 'legendary') overlayColor = '#ffcd75';
+        if (gBox.rarity === 'mythic') overlayColor = '#ff1e50';
 
         this.spawnFloatingText(`+1 ${gBox.rarity.toUpperCase()} CARGO LOADED (${this.truckCargoCount}/${targetCapacity})`, bx, by - 20, overlayColor);
 
@@ -1693,6 +1845,18 @@ export class GameEngine {
         const pools = ['crown', 'goggled_helmet'];
         unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
       }
+    } else if (gBox.rarity === 'mythic') {
+      lootCoins = Math.floor(Math.random() * 120) + 100; // 100 - 219
+      lootGems = Math.floor(Math.random() * 8) + 6; // 6 - 13
+      if (Math.random() < 0.60) {
+        unlockedType = 'pet';
+        const pools = ['slime', 'ufo', 'dragon'];
+        unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
+      } else {
+        unlockedType = 'cosmetic';
+        const pools = ['ninja_mask', 'party_hat', 'goggled_helmet'];
+        unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
+      }
     }
 
     // Apply Loot yields to player profile
@@ -1834,6 +1998,10 @@ export class GameEngine {
     if (this.gameMode === 'farming') {
       this.updateFarmingRoom();
       this.updatePlayerMovement();
+      this.updatePlasmaBullets();
+      this.updatePortalBullets();
+      this.updateHookshotPhysics();
+      this.updateRopesPhysics();
       this.updateParticles();
       this.updateFloatingTexts();
       this.updatePets();
@@ -1841,6 +2009,7 @@ export class GameEngine {
     }
 
     // Projectile laser shots physics
+    this.updatePlasmaBullets();
     this.updatePortalBullets();
 
     // Hookshot and Rope constraint calculations
@@ -1877,24 +2046,61 @@ export class GameEngine {
   private updatePlayerMovement() {
     const p = this.player;
 
+    // 🚀 Lithium Jetpack active flight engine!
+    if (this.currentTool === 'jetpack' && this.inputs.up) {
+      p.vy -= 0.42; // steady rocket lift thrust
+      if (p.vy < -4.5) p.vy = -4.5; // speed ceiling
+      p.onGround = false;
+      p.state = 'jump';
+
+      // Fire visuals under feet
+      const feetX = p.x + p.width / 2;
+      const feetY = p.y + p.height - 2;
+      this.particles.push({
+        id: makeId(),
+        type: 'fire',
+        x: feetX + Math.random() * 6 - 3,
+        y: feetY,
+        vx: Math.random() * 1.5 - 0.75,
+        vy: Math.random() * 1.5 + 1.2, // blows down
+        color: Math.random() < 0.4 ? '#ff1e50' : '#ffe385',
+        size: Math.random() * 3.5 + 1.5,
+        life: 0.8,
+        decay: 0.08,
+        angle: 0,
+        angularVelocity: 0
+      });
+      // soft hum sound block
+      if (Math.random() < 0.05) {
+        sound.playTone(100 + Math.random() * 30, 80, 0.04, "sawtooth", 0.1);
+      }
+    }
+
     if (this.gameMode === 'farming') {
-      const onLadder = Math.abs((p.x + p.width/2) - 320) < 18;
+      const onLadder = Math.abs((p.x + p.width/2) - 320) < 15;
       
+      if (!onLadder) {
+        this.isClimbingLadder = false;
+      }
+
       if (onLadder && (this.inputs.up || this.inputs.down)) {
+        this.isClimbingLadder = true;
+      }
+
+      if (this.isClimbingLadder && onLadder) {
+        // We override gravity and allow climbing up and down cleanly
         if (this.inputs.up) {
           p.vy = -2.2;
         } else if (this.inputs.down) {
           p.vy = 2.2;
+        } else {
+          p.vy = 0; // Suspend them exactly in place!
         }
         p.onGround = false;
         p.state = 'jump';
         p.y += p.vy;
-      } else if (onLadder) {
-        // Suspend player on ladder
-        p.vy = 0;
-        p.onGround = true; // allow launching jumpers
-        p.state = 'idle';
       } else {
+        // Regular gravity applies normally!
         p.vy += this.world.gravity;
         p.y += p.vy;
       }
@@ -1903,8 +2109,10 @@ export class GameEngine {
       const floors = [110, 220, 328];
       let landed = false;
       for (const fY of floors) {
-        if (p.vy >= 0 && (p.y + p.height - p.vy <= fY + 2.2) && (p.y + p.height >= fY - 2.2)) {
-          if (!onLadder || !this.inputs.down) {
+        if (p.vy >= 0 && (p.y + p.height - p.vy <= fY + 4.5) && (p.y + p.height >= fY - 4.5)) {
+          // On the absolute bottom floor, they can never fall through!
+          const isBottomFloor = fY === 328;
+          if (isBottomFloor || !onLadder || !this.inputs.down) {
             p.y = fY - p.height;
             if (p.vy > 1.5) {
               sound.playLand();
@@ -1917,6 +2125,19 @@ export class GameEngine {
           }
         }
       }
+
+      // Absolute fail-safe hard floor barrier: no player can ever dip below Y 328 in farming mode!
+      if (p.y + p.height >= 328) {
+        p.y = 328 - p.height;
+        if (p.vy > 1.5) {
+          sound.playLand();
+          this.spawnDust(p.x + p.width / 2, 328, 2);
+        }
+        p.vy = 0;
+        p.onGround = true;
+        landed = true;
+      }
+
       if (!landed && !onLadder) {
         p.onGround = false;
       }

@@ -204,15 +204,15 @@ const handleKeyDown = (e: KeyboardEvent) => {
         return;
       }
 
-      // 4. Farm Portal Proximity (X = 580, cozy garden)
-      if (Math.abs(px - 580) < 32) {
+      // 4. Farm Portal Proximity (X = 580, cozy garden) - prioritized & narrowed
+      if (Math.abs(px - 580) < 24) {
         engine.setFarmingMode();
         sound.playUnlock();
         return;
       }
 
-      // 5. Run Portal Proximity (X = 480, infinite box run)
-      if (Math.abs(px - 480) < 32) {
+      // 5. Run Portal Proximity (X = 480, infinite box run) - narrowed
+      if (Math.abs(px - 480) < 24) {
         engine.startNewRun();
         sound.playUnlock();
         return;
@@ -306,6 +306,17 @@ const handleMouseDown = (e: MouseEvent) => {
 
   const { mx, my } = getVirtualMouseCoords(e.clientX, e.clientY);
 
+  // IF OVERLAY WINDOW IS ACTIVE, INTERCEPT CLICK COORDINATES ONLY
+  if (isShopOpen) {
+    handleShopClicks(mx, my);
+    return;
+  }
+
+  if (isClosetOpen) {
+    handleClosetClicks(mx, my);
+    return;
+  }
+
   // 🔊 Audio mute slider click check (Top-Left)
   if (mx >= 12 && mx <= 70 && my >= 10 && my <= 26) {
     sound.enabled = !sound.enabled;
@@ -392,17 +403,6 @@ const handleMouseDown = (e: MouseEvent) => {
     return;
   }
 
-  // IF OVERLAY WINDOW IS ACTIVE, INTERCEPT CLICK COORDINATES ONLY
-  if (isShopOpen) {
-    handleShopClicks(mx, my);
-    return;
-  }
-
-  if (isClosetOpen) {
-    handleClosetClicks(mx, my);
-    return;
-  }
-
   // Start elevator/portal quick clicking check in Lobby
   if (engine.gameMode === 'lobby') {
     const px = engine.player.x + engine.player.width / 2;
@@ -446,6 +446,12 @@ const handleMouseDown = (e: MouseEvent) => {
     return;
   }
 
+  // Plasma Blaster Projectiles
+  if (engine.currentTool === 'plasma_blaster') {
+    engine.shootPlasmaBlaster(mx, my);
+    return;
+  }
+
   // Hookshot Drag Line check
   if (engine.currentTool === 'hookshot') {
     engine.fireHookshot(mx, my);
@@ -477,7 +483,7 @@ const handleMouseDown = (e: MouseEvent) => {
 // Handle clicks inside upgrades computer menu
 const handleShopClicks = (mx: number, my: number) => {
   const panelW = 320;
-  const panelH = 235;
+  const panelH = 245;
   const px = (width - panelW) / 2;
   const py = (height - panelH) / 2;
 
@@ -526,6 +532,15 @@ const handleShopClicks = (mx: number, my: number) => {
         engine.spawnFloatingText("REQUIRES 600 COINS & 4 GEMS!", width / 2, py + 164, "#ef7d57");
       }
     }
+    // Row 5: Lithium Jetpack option
+    else if (my >= py + 184 && my <= py + 216 && !engine.inventory.tools.includes('jetpack')) {
+      if (engine.purchaseToolUnlock('jetpack', 700, 4)) {
+        engine.spawnFloatingText("LITHIUM JETPACK UNLOCKED! 🚀", width / 2, py + 200, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("REQUIRES 700 COINS & 4 GEMS!", width / 2, py + 200, "#ef7d57");
+      }
+    }
   }
 
   // Column 2 (Right column click)
@@ -566,6 +581,15 @@ const handleShopClicks = (mx: number, my: number) => {
         engine.spawnFloatingText("REQUIRES 450 COINS & 1 GEM!", width / 2, py + 164, "#ef7d57");
       }
     }
+    // Row 5: Plasma Blaster option
+    else if (my >= py + 184 && my <= py + 216 && !engine.inventory.tools.includes('plasma_blaster')) {
+      if (engine.purchaseToolUnlock('plasma_blaster', 800, 6)) {
+        engine.spawnFloatingText("PLASMA BLASTER UNLOCKED! 💥", width / 2, py + 200, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("REQUIRES 800 COINS & 6 GEMS!", width / 2, py + 200, "#ef7d57");
+      }
+    }
   }
 };
 
@@ -592,18 +616,20 @@ const handleClosetClicks = (mx: number, my: number) => {
     { id: 'cowboy_hat', name: "Cowboy Hat 🤠" },
     { id: 'chef_hat', name: "Chef Hat 🧑‍🍳" },
     { id: 'wizard_hat', name: "Wizard Hat 🧙" },
-    { id: 'goggled_helmet', name: "Astronaut Helmet 👨‍🚀" }
+    { id: 'goggled_helmet', name: "Astronaut Helmet 👨‍🚀" },
+    { id: 'ninja_mask', name: "Shadow Ninja Mask 🥷" },
+    { id: 'party_hat', name: "Party Hat 🎉" }
   ];
 
   if (mx >= px + 12 && mx <= px + 150) {
-    const i = Math.floor((my - (py + 44)) / 22);
+    const i = Math.floor((my - (py + 42)) / 18);
     if (i >= 0 && i < cosItems.length) {
       const item = cosItems[i];
       if (engine.inventory.cosmetics.includes(item.id)) {
         engine.toggleEquipCosmetic(item.id);
       } else {
         sound.playSplat();
-        engine.spawnFloatingText("NOT UNBOXED YET! 📦", px + 80, py + 54 + i * 22, "#9fadbc");
+        engine.spawnFloatingText("NOT UNBOXED YET! 📦", px + 80, py + 49 + i * 18, "#9fadbc");
       }
     }
   }
@@ -616,7 +642,9 @@ const handleClosetClicks = (mx: number, my: number) => {
     { id: 'hookshot', name: "Magnetic Hookshot 🪝" },
     { id: 'toolgun', name: "Rope Toolgun 🔫" },
     { id: 'laser_cutter', name: "Laser Cutter ⚡" },
-    { id: 'vacuum_harvester', name: "Vacuum Harvester 🌀" }
+    { id: 'vacuum_harvester', name: "Vacuum Harvester 🌀" },
+    { id: 'jetpack', name: "Lithium Jetpack 🚀" },
+    { id: 'plasma_blaster', name: "Plasma Blaster 💥" }
   ];
 
   const petsList = [
@@ -632,15 +660,15 @@ const handleClosetClicks = (mx: number, my: number) => {
 
   if (mx >= px + 162 && mx <= px + 310) {
     // Tools check
-    if (my >= py + 42 && my <= py + 119) {
-      const i = Math.floor((my - (py + 42)) / 11);
+    if (my >= py + 40 && my <= py + 126) {
+      const i = Math.floor((my - (py + 40)) / 9.5);
       if (i >= 0 && i < toolsList.length) {
         const t = toolsList[i];
         if (engine.inventory.tools.includes(t.id)) {
           engine.toggleEquipTool(t.id);
         } else {
           sound.playSplat();
-          engine.spawnFloatingText("NOT BOUGHT YET! 🔒", px + 236, py + 46 + i * 11, "#9fadbc");
+          engine.spawnFloatingText("NOT BOUGHT YET! 🔒", px + 236, py + 44 + i * 9.5, "#9fadbc");
         }
       }
     }
@@ -900,7 +928,8 @@ const drawInteractiveSectorDecorations = (w: number, h: number) => {
         common: 'wood',
         rare: 'metal',
         epic: 'present',
-        legendary: 'hover'
+        legendary: 'hover',
+        mythic: 'tnt'
       };
       const type = typeMap[engine.activeDroppedRarity] || 'wood';
       sprites.drawSprite(ctx, `crate_${type}`, cx - 10, dangleY, 20, 20);
@@ -924,7 +953,8 @@ const drawLobbyCargoTruck = (w: number, h: number) => {
       common: 'wood',
       rare: 'metal',
       epic: 'present',
-      legendary: 'hover'
+      legendary: 'hover',
+      mythic: 'tnt'
     };
 
     for (let i = 0; i < items.length; i++) {
@@ -962,7 +992,8 @@ const drawLobbyCargoTruck = (w: number, h: number) => {
       common: 'wood',
       rare: 'metal',
       epic: 'present',
-      legendary: 'hover'
+      legendary: 'hover',
+      mythic: 'tnt'
     };
 
     for (let i = 0; i < items.length; i++) {
@@ -1598,6 +1629,36 @@ const drawWornCosmetics = (px: number, py: number, flipX: boolean) => {
     ctx.fillRect(headX - 4 * facingMod, headY - 4, 12, 12);
     ctx.fillStyle = '#36e5f0';
     ctx.fillRect(headX - 4 * facingMod + 2.5 + (flipX ? -1 : 1), headY, 7, 6);
+  } else if (engine.currentCosmetic === 'ninja_mask') {
+    // Elegant deep black mask
+    ctx.fillStyle = '#10121c';
+    ctx.fillRect(headX - 4 * facingMod, headY - 2, 12, 10);
+    // Glowing sharp red eye slits
+    ctx.fillStyle = '#ff1e50';
+    if (flipX) {
+      ctx.fillRect(headX - 4 * facingMod + 2, headY + 1, 3, 1);
+      ctx.fillRect(headX - 4 * facingMod + 6, headY + 1, 2, 1);
+    } else {
+      ctx.fillRect(headX - 4 * facingMod + 4, headY + 1, 2, 1);
+      ctx.fillRect(headX - 4 * facingMod + 7, headY + 1, 3, 1);
+    }
+  } else if (engine.currentCosmetic === 'party_hat') {
+    // Colorful celebratory striped cone
+    ctx.fillStyle = '#ff8be6';
+    ctx.beginPath();
+    ctx.moveTo(headX - 4 * facingMod + 1, headY + 2);
+    ctx.lineTo(headX - 4 * facingMod + 9, headY + 2);
+    ctx.lineTo(headX - 4 * facingMod + 5, headY - 12);
+    ctx.closePath();
+    ctx.fill();
+    // Stripe
+    ctx.fillStyle = '#ffe385';
+    ctx.fillRect(headX - 4 * facingMod + 3, headY - 4, 4, 2);
+    // Pom-pom on top
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(headX - 4 * facingMod + 5, headY - 13, 2, 0, Math.PI * 2);
+    ctx.fill();
   }
 };
 
@@ -1617,6 +1678,8 @@ const drawCarriedTool = (px: number, py: number, flipX: boolean) => {
   else if (engine.currentTool === 'toolgun') toolSprite = 'tool_toolgun';
   else if (engine.currentTool === 'laser_cutter') toolSprite = 'tool_laser_cutter';
   else if (engine.currentTool === 'vacuum_harvester') toolSprite = 'tool_vacuum_harvester';
+  else if (engine.currentTool === 'jetpack') toolSprite = 'tool_jetpack';
+  else if (engine.currentTool === 'plasma_blaster') toolSprite = 'tool_plasma_blaster';
 
   sprites.drawSprite(ctx, toolSprite, tx, ty, 12, 12, { flipX: flipX });
 };
@@ -1884,7 +1947,7 @@ const drawKeyInteractiveBubble = (x: number, y: number, text: string) => {
 // Render pop-up CRT menu for upgrades Shop Computer desk
 const drawShopWindowModal = (w: number, h: number) => {
   const panelW = 320;
-  const panelH = 235;
+  const panelH = 245;
   const px = (w - panelW) / 2;
   const py = (h - panelH) / 2;
 
@@ -2015,6 +2078,28 @@ const drawShopWindowModal = (w: number, h: number) => {
   ctx.font = '5px monospace';
   ctx.fillText(hasLaser ? "✓" : "-600C/4G", px + 131, py + 169);
 
+  // Row 5: Lithium Jetpack
+  const hasJet = engine.inventory.tools.includes('jetpack');
+  const canAffordJet = engine.coins >= 700 && engine.gems >= 4;
+
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 6.2px monospace';
+  ctx.fillStyle = '#ffe385';
+  ctx.fillText("🚀 LITHIUM JETPACK", px + 12, py + 192);
+  ctx.font = '5px monospace';
+  ctx.fillStyle = '#9fadbc';
+  ctx.fillText("Fly upwards by holding UP/Space", px + 12, py + 200);
+  ctx.fillText("Cost: 700 Coins & 4 Gems", px + 12, py + 208);
+
+  ctx.fillStyle = hasJet ? '#333c57' : (canAffordJet ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(px + 112, py + 186, 38, 24);
+  ctx.fillStyle = hasJet ? '#9fadbc' : '#10121c';
+  ctx.font = 'bold 5.8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(hasJet ? "OWNED" : "UNLOCK", px + 131, py + 196);
+  ctx.font = '5px monospace';
+  ctx.fillText(hasJet ? "✓" : "-700C/4G", px + 131, py + 205);
+
   // ------------------------------------
   // COLUMN 2 (Right column - Tech Lab Gear & Weapons)
   // ------------------------------------
@@ -2107,11 +2192,33 @@ const drawShopWindowModal = (w: number, h: number) => {
   ctx.font = '5px monospace';
   ctx.fillText(hasVac ? "✓" : "-450C/1G", px + 288, py + 169);
 
+  // Row 5: Plasma Blaster
+  const hasBlast = engine.inventory.tools.includes('plasma_blaster');
+  const canAffordBlast = engine.coins >= 800 && engine.gems >= 6;
+
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 6.2px monospace';
+  ctx.fillStyle = '#ff1e50';
+  ctx.fillText("💥 PLASMA BLASTER", px + 162, py + 192);
+  ctx.font = '5px monospace';
+  ctx.fillStyle = '#9fadbc';
+  ctx.fillText("Destructively blast & grow crops", px + 162, py + 200);
+  ctx.fillText("Cost: 800 Coins & 6 Gems", px + 162, py + 208);
+
+  ctx.fillStyle = hasBlast ? '#333c57' : (canAffordBlast ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(px + 268, py + 186, 40, 24);
+  ctx.fillStyle = hasBlast ? '#9fadbc' : '#10121c';
+  ctx.font = 'bold 5.8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(hasBlast ? "OWNED" : "UNLOCK", px + 288, py + 196);
+  ctx.font = '5px monospace';
+  ctx.fillText(hasBlast ? "✓" : "-800C/6G", px + 288, py + 205);
+
   // Escape notification footer
   ctx.textAlign = 'center';
   ctx.font = '6px monospace';
   ctx.fillStyle = '#9fadbc';
-  ctx.fillText("PRESS ESCAPE KEY OR E KEY TO SHUT COMPUTER SCREEN", px + panelW / 2, py + panelH - 12);
+  ctx.fillText("PRESS ESCAPE KEY OR E KEY TO SHUT COMPUTER SCREEN", px + panelW / 2, py + panelH - 10);
 };
 
 // Render Closet profile wardrobe equip menu
@@ -2161,7 +2268,9 @@ const drawClosetWindowModal = (w: number, h: number) => {
     { id: 'cowboy_hat', name: "Cowboy Hat 🤠" },
     { id: 'chef_hat', name: "Chef Hat 🧑‍🍳" },
     { id: 'wizard_hat', name: "Wizard Hat 🧙" },
-    { id: 'goggled_helmet', name: "Astro Helmet 👨‍🚀" }
+    { id: 'goggled_helmet', name: "Astro Helmet 👨‍🚀" },
+    { id: 'ninja_mask', name: "Shadow Ninja Mask 🥷" },
+    { id: 'party_hat', name: "Party Hat 🎉" }
   ];
 
   for (let i = 0; i < cosItems.length; i++) {
@@ -2170,15 +2279,15 @@ const drawClosetWindowModal = (w: number, h: number) => {
     const isWorn = engine.currentCosmetic === item.id;
 
     ctx.fillStyle = isWorn ? '#4fa9ff' : (hasUnlocked ? '#333c57' : '#10121c');
-    ctx.fillRect(px + 12, py + 44 + i * 22, 138, 18);
+    ctx.fillRect(px + 12, py + 42 + i * 18, 138, 15);
     ctx.strokeStyle = '#10121c';
-    ctx.strokeRect(px + 12, py + 44 + i * 22, 138, 18);
+    ctx.strokeRect(px + 12, py + 42 + i * 18, 138, 15);
 
     ctx.fillStyle = isWorn ? '#ffffff' : (hasUnlocked ? '#f4f4f4' : '#566c86');
-    ctx.font = 'bold 6.2px monospace';
-    ctx.fillText(`${item.name} ${isWorn ? '(ACTIVE)' : ''}`, px + 16, py + 52 + i * 22);
-    ctx.font = '5.2px monospace';
-    ctx.fillText(hasUnlocked ? "Equipped: Toggle wear" : "🔒 Collect crates to unbox", px + 16, py + 59 + i * 22);
+    ctx.font = 'bold 5.8px monospace';
+    ctx.fillText(`${item.name} ${isWorn ? '(ACTIVE)' : ''}`, px + 16, py + 49 + i * 18);
+    ctx.font = '5px monospace';
+    ctx.fillText(hasUnlocked ? "Equipped: Toggle wear" : "🔒 Collect crates to unbox", px + 16, py + 55 + i * 18);
   }
 
   // COLUMN 2 - GADGET TIERS & COMPANIONS
@@ -2193,7 +2302,9 @@ const drawClosetWindowModal = (w: number, h: number) => {
     { id: 'hookshot', name: "Magnetic Hookshot 🪝" },
     { id: 'toolgun', name: "Rope Toolgun 🔫" },
     { id: 'laser_cutter', name: "Laser Cutter ⚡" },
-    { id: 'vacuum_harvester', name: "Vacuum Harvester 🌀" }
+    { id: 'vacuum_harvester', name: "Vacuum Harvester 🌀" },
+    { id: 'jetpack', name: "Lithium Jetpack 🚀" },
+    { id: 'plasma_blaster', name: "Plasma Blaster 💥" }
   ];
 
   const petsList = [
@@ -2213,13 +2324,13 @@ const drawClosetWindowModal = (w: number, h: number) => {
     const hasU = engine.inventory.tools.includes(t.id);
 
     ctx.fillStyle = isEquipped ? '#73ef7d' : (hasU ? '#333c57' : '#10121c');
-    ctx.fillRect(px + 162, py + 42 + i * 11, 148, 9);
+    ctx.fillRect(px + 162, py + 40 + i * 9.5, 148, 8.2);
     ctx.strokeStyle = '#10121c';
-    ctx.strokeRect(px + 162, py + 42 + i * 11, 148, 9);
+    ctx.strokeRect(px + 162, py + 40 + i * 9.5, 148, 8.2);
 
     ctx.fillStyle = isEquipped ? '#10121c' : (hasU ? '#ffffff' : '#566c86');
-    ctx.font = '5.4px monospace';
-    ctx.fillText(`${t.name} ${isEquipped ? '(HOLD)' : ''}`, px + 166, py + 49 + i * 11);
+    ctx.font = '5px monospace';
+    ctx.fillText(`${t.name} ${isEquipped ? '(HOLD)' : ''}`, px + 166, py + 46 + i * 9.5);
   }
 
   // Column 2 - PETS
