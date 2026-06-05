@@ -173,6 +173,11 @@ const handleKeyDown = (e: KeyboardEvent) => {
         }
         return;
       }
+
+      // Default fallback for farming mode: toggle Closet/Inventory anywhere!
+      isClosetOpen = !isClosetOpen;
+      sound.playUnlock();
+      return;
     }
 
     // Proximity checks inside Lobby mode
@@ -200,8 +205,30 @@ const handleKeyDown = (e: KeyboardEvent) => {
       }
     }
 
-    // Default: try lift physical crate
-    engine.tryGrabBox();
+    // Default: try lift physical crate. If none closer than 45px, toggle Closet Inventory!
+    let hasNearBox = false;
+    if (engine.player.grabbingBox) {
+      hasNearBox = true;
+    } else {
+      const px = engine.player.x + engine.player.width / 2;
+      const py = engine.player.y + engine.player.height / 2;
+      for (const b of engine.boxes) {
+        if (b.isOpened) continue;
+        const bx = b.x + b.width / 2;
+        const by = b.y + b.height / 2;
+        if (Math.hypot(bx - px, by - py) < 45) {
+          hasNearBox = true;
+          break;
+        }
+      }
+    }
+
+    if (hasNearBox) {
+      engine.tryGrabBox();
+    } else {
+      isClosetOpen = !isClosetOpen;
+      sound.playUnlock();
+    }
     return;
   }
 
@@ -412,6 +439,18 @@ const handleMouseDown = (e: MouseEvent) => {
     return;
   }
 
+  // Laser Cutter trigger
+  if (engine.currentTool === 'laser_cutter') {
+    engine.shootLaserCutter(mx, my);
+    return;
+  }
+
+  // Vacuum Harvester magnetic suction trigger
+  if (engine.currentTool === 'vacuum_harvester') {
+    engine.shootVacuumHarvester(mx, my);
+    return;
+  }
+
   // Default Click physics grabbing / flinging
   engine.handleMouseDown(mx, my);
 };
@@ -459,6 +498,15 @@ const handleShopClicks = (mx: number, my: number) => {
         engine.spawnFloatingText("INSUFFICIENT COINS!", width / 2, py + 128, "#ef7d57");
       }
     }
+    // Row 4: Laser Cutter Tool option
+    else if (my >= py + 148 && my <= py + 180 && !engine.inventory.tools.includes('laser_cutter')) {
+      if (engine.purchaseToolUnlock('laser_cutter', 600, 4)) {
+        engine.spawnFloatingText("LASER CUTTER UNLOCKED! ⚡", width / 2, py + 164, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("REQUIRES 600 COINS & 4 GEMS!", width / 2, py + 164, "#ef7d57");
+      }
+    }
   }
 
   // Column 2 (Right column click)
@@ -488,6 +536,15 @@ const handleShopClicks = (mx: number, my: number) => {
       } else {
         sound.playSplat();
         engine.spawnFloatingText("REQUIRES 400 COINS & 3 GEMS!", width / 2, py + 128, "#ef7d57");
+      }
+    }
+    // Row 4: Vacuum Harvester option
+    else if (my >= py + 148 && my <= py + 180 && !engine.inventory.tools.includes('vacuum_harvester')) {
+      if (engine.purchaseToolUnlock('vacuum_harvester', 450, 1)) {
+        engine.spawnFloatingText("VACUUM HARVESTER UNLOCKED! 🌀", width / 2, py + 164, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("REQUIRES 450 COINS & 1 GEM!", width / 2, py + 164, "#ef7d57");
       }
     }
   }
@@ -576,23 +633,33 @@ const handleClosetClicks = (mx: number, my: number) => {
       if (engine.inventory.tools.includes('toolgun')) engine.toggleEquipTool('toolgun');
       else sound.playSplat();
     }
+    // Tool slot 6: Laser Cutter
+    else if (my >= py + 98 && my <= py + 109) {
+      if (engine.inventory.tools.includes('laser_cutter')) engine.toggleEquipTool('laser_cutter');
+      else sound.playSplat();
+    }
+    // Tool slot 7: Vacuum Harvester
+    else if (my >= py + 110 && my <= py + 121) {
+      if (engine.inventory.tools.includes('vacuum_harvester')) engine.toggleEquipTool('vacuum_harvester');
+      else sound.playSplat();
+    }
     // Pet slot 1: Dog
-    else if (my >= py + 112 && my <= py + 126) {
+    else if (my >= py + 128 && my <= py + 142) {
       if (engine.inventory.pets.includes('dog')) engine.toggleEquipPet('dog');
       else sound.playSplat();
     }
     // Pet slot 2: Cat
-    else if (my >= py + 128 && my <= py + 142) {
+    else if (my >= py + 144 && my <= py + 158) {
       if (engine.inventory.pets.includes('cat')) engine.toggleEquipPet('cat');
       else sound.playSplat();
     }
     // Pet slot 3: Fish
-    else if (my >= py + 144 && my <= py + 158) {
+    else if (my >= py + 160 && my <= py + 174) {
       if (engine.inventory.pets.includes('fish')) engine.toggleEquipPet('fish');
       else sound.playSplat();
     }
     // Pet slot 4: Robot
-    else if (my >= py + 160 && my <= py + 174) {
+    else if (my >= py + 176 && my <= py + 190) {
       if (engine.inventory.pets.includes('robot')) engine.toggleEquipPet('robot');
       else sound.playSplat();
     }
@@ -1241,10 +1308,32 @@ const drawDeporcusShopWindow = (w: number, h: number) => {
     });
   }
 
+  // Fertilizer Status and Buy Card button
+  const fertActive = engine.farmingState.fertilizerTimeRemaining > 0;
+  const fertCost = 150;
+  const canAffordFert = engine.coins >= fertCost;
+
+  ctx.fillStyle = fertActive ? '#ffb914' : (canAffordFert ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(leftColX + 4, py + panelH - 18, colW - 8, 14);
+  ctx.strokeStyle = '#10121c';
+  ctx.strokeRect(leftColX + 4, py + panelH - 18, colW - 8, 14);
+
+  ctx.fillStyle = fertActive ? '#10121c' : '#10121c';
+  ctx.font = 'bold 6px monospace';
+  ctx.textAlign = 'center';
+  if (fertActive) {
+    const mins = Math.floor(engine.farmingState.fertilizerTimeRemaining / 60);
+    const secs = Math.floor(engine.farmingState.fertilizerTimeRemaining % 60);
+    ctx.fillText(`⚡ FERTILIZER 2X ACTIVE! [${mins}m ${secs}s]`, leftColX + colW / 2, py + panelH - 9);
+  } else {
+    ctx.fillText(`🌱 BUY 2X SPEED FERTILIZER (-150 Coins)`, leftColX + colW / 2, py + panelH - 9);
+  }
+  ctx.textAlign = 'left';
+
   ctx.fillStyle = '#9fadbc';
-  ctx.font = '6px monospace';
+  ctx.font = '5.5px monospace';
   const remSec = Math.ceil(engine.farmingState.shopRestockTimer);
-  ctx.fillText(`• BARN RE-STOCK TICK COUNT: ${remSec}s`, px + 12, py + panelH - 22);
+  ctx.fillText(`Restock Tick: ${remSec}s`, leftColX + 8, py + panelH - 22);
 
   ctx.fillStyle = '#73ef7d';
   ctx.fillRect(rightColX + 4, py + panelH - 26, colW - 8, 14);
@@ -1342,6 +1431,17 @@ const handleDeporcusClicks = (mx: number, my: number) => {
 
   // Click on Seed Stand (Left column rows)
   if (mx >= leftColX && mx <= leftColX + colW) {
+    // Check if clicked the Speed Fertilizer button at the bottom:
+    if (my >= py + panelH - 18 && my <= py + panelH - 4) {
+      if (engine.purchaseFertilizerSpeedBoost(150, 480)) { // 150 coins for 480 seconds (8 minutes) of 2x boost!
+        engine.spawnFloatingText("2X FERTILIZER ACTIVE! ⏱️", width / 2, height / 2 - 20, "#ffd93d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("INSUFFICIENT COINS!", width / 2, height / 2 - 20, "#ef7d57");
+      }
+      return;
+    }
+
     CROP_TYPES.forEach((crop, idx) => {
       const rowY = py + 45 + idx * 17;
       if (my >= rowY && my <= rowY + 15) {
@@ -1436,6 +1536,8 @@ const drawCarriedTool = (px: number, py: number, flipX: boolean) => {
   else if (engine.currentTool === 'shamrock') toolSprite = 'tool_shamrock';
   else if (engine.currentTool === 'hookshot') toolSprite = 'tool_hookshot';
   else if (engine.currentTool === 'toolgun') toolSprite = 'tool_toolgun';
+  else if (engine.currentTool === 'laser_cutter') toolSprite = 'tool_laser_cutter';
+  else if (engine.currentTool === 'vacuum_harvester') toolSprite = 'tool_vacuum_harvester';
 
   sprites.drawSprite(ctx, toolSprite, tx, ty, 12, 12, { flipX: flipX });
 };
@@ -1624,7 +1726,7 @@ const drawKeyInteractiveBubble = (x: number, y: number, text: string) => {
 // Render pop-up CRT menu for upgrades Shop Computer desk
 const drawShopWindowModal = (w: number, h: number) => {
   const panelW = 320;
-  const panelH = 200;
+  const panelH = 235;
   const px = (w - panelW) / 2;
   const py = (h - panelH) / 2;
 
@@ -1733,6 +1835,28 @@ const drawShopWindowModal = (w: number, h: number) => {
   ctx.font = '5px monospace';
   ctx.fillText(hasLucky ? "✓" : "-350C", px + 131, py + 133);
 
+  // Row 4: Laser Cutter Tool option
+  const hasLaser = engine.inventory.tools.includes('laser_cutter');
+  const canAffordLaser = engine.coins >= 600 && engine.gems >= 4;
+
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 6.2px monospace';
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillText("⚡ LASER CUTTER", px + 12, py + 156);
+  ctx.font = '5px monospace';
+  ctx.fillStyle = '#9fadbc';
+  ctx.fillText("Destroy & instantly unbox crates", px + 12, py + 164);
+  ctx.fillText("Cost: 600 Coins & 4 Gems", px + 12, py + 172);
+
+  ctx.fillStyle = hasLaser ? '#333c57' : (canAffordLaser ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(px + 112, py + 150, 38, 24);
+  ctx.fillStyle = hasLaser ? '#9fadbc' : '#10121c';
+  ctx.font = 'bold 5.8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(hasLaser ? "OWNED" : "UNLOCK", px + 131, py + 160);
+  ctx.font = '5px monospace';
+  ctx.fillText(hasLaser ? "✓" : "-600C/4G", px + 131, py + 169);
+
   // ------------------------------------
   // COLUMN 2 (Right column - Tech Lab Gear & Weapons)
   // ------------------------------------
@@ -1755,9 +1879,9 @@ const drawShopWindowModal = (w: number, h: number) => {
   ctx.fillStyle = hasGun ? '#9fadbc' : '#10121c';
   ctx.font = 'bold 5.8px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(hasGun ? "OWNED" : "UNLOCK", px + 288, py + 88 - 36);
+  ctx.fillText(hasGun ? "OWNED" : "UNLOCK", px + 288, py + 52);
   ctx.font = '5px monospace';
-  ctx.fillText(hasGun ? "✓" : "-500C/5G", px + 288, py + 97 - 36);
+  ctx.fillText(hasGun ? "✓" : "-500C/5G", px + 288, py + 61);
 
   // Row 2: Magnetic Hookshot
   const hasHook = engine.inventory.tools.includes('hookshot');
@@ -1803,6 +1927,28 @@ const drawShopWindowModal = (w: number, h: number) => {
   ctx.font = '5px monospace';
   ctx.fillText(hasTgun ? "✓" : "-400C/3G", px + 288, py + 133);
 
+  // Row 4: Vacuum Harvester option
+  const hasVac = engine.inventory.tools.includes('vacuum_harvester');
+  const canAffordVac = engine.coins >= 450 && engine.gems >= 1;
+
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 6.2px monospace';
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillText("🌀 VACUUM DISPENSER", px + 162, py + 156);
+  ctx.font = '5px monospace';
+  ctx.fillStyle = '#9fadbc';
+  ctx.fillText("Sucks and reels floor loot close", px + 162, py + 164);
+  ctx.fillText("Cost: 450 Coins & 1 Gem", px + 162, py + 172);
+
+  ctx.fillStyle = hasVac ? '#333c57' : (canAffordVac ? '#73ef7d' : '#a24b31');
+  ctx.fillRect(px + 268, py + 150, 40, 24);
+  ctx.fillStyle = hasVac ? '#9fadbc' : '#10121c';
+  ctx.font = 'bold 5.8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(hasVac ? "OWNED" : "UNLOCK", px + 288, py + 160);
+  ctx.font = '5px monospace';
+  ctx.fillText(hasVac ? "✓" : "-450C/1G", px + 288, py + 169);
+
   // Escape notification footer
   ctx.textAlign = 'center';
   ctx.font = '6px monospace';
@@ -1813,7 +1959,7 @@ const drawShopWindowModal = (w: number, h: number) => {
 // Render Closet profile wardrobe equip menu
 const drawClosetWindowModal = (w: number, h: number) => {
   const panelW = 320;
-  const panelH = 200;
+  const panelH = 220;
   const px = (w - panelW) / 2;
   const py = (h - panelH) / 2;
 
@@ -1883,7 +2029,9 @@ const drawClosetWindowModal = (w: number, h: number) => {
     { id: 'shamrock', name: "Clover Shamrock 🍀" },
     { id: 'portal_gun', name: "Quantum Portal Gun 🔮" },
     { id: 'hookshot', name: "Magnetic Hookshot 🪝" },
-    { id: 'toolgun', name: "Rope Toolgun 🔫" }
+    { id: 'toolgun', name: "Rope Toolgun 🔫" },
+    { id: 'laser_cutter', name: "Laser Cutter ⚡" },
+    { id: 'vacuum_harvester', name: "Vacuum Harvester 🌀" }
   ];
 
   for (let i = 0; i < toolsList.length; i++) {
@@ -1892,19 +2040,19 @@ const drawClosetWindowModal = (w: number, h: number) => {
     const hasU = engine.inventory.tools.includes(t.id);
 
     ctx.fillStyle = isEquipped ? '#73ef7d' : (hasU ? '#333c57' : '#10121c');
-    ctx.fillRect(px + 165, py + 38 + i * 13, 140, 11);
+    ctx.fillRect(px + 165, py + 38 + i * 12, 140, 10);
     ctx.strokeStyle = '#10121c';
-    ctx.strokeRect(px + 165, py + 38 + i * 13, 140, 11);
+    ctx.strokeRect(px + 165, py + 38 + i * 12, 140, 10);
 
     ctx.fillStyle = isEquipped ? '#10121c' : (hasU ? '#ffffff' : '#566c86');
-    ctx.font = '5.8px monospace';
-    ctx.fillText(`${t.name} ${isEquipped ? '(HOLD)' : ''}`, px + 171, py + 46 + i * 13);
+    ctx.font = '5.4px monospace';
+    ctx.fillText(`${t.name} ${isEquipped ? '(HOLD)' : ''}`, px + 171, py + 45 + i * 12);
   }
 
   // PETS LISTING
   ctx.fillStyle = '#ffcd75';
   ctx.font = 'bold 7px monospace';
-  ctx.fillText("🐾 LITTLE MINI PET TRAILING COMPANION", px + 165, py + 106);
+  ctx.fillText("🐾 LITTLE MINI PET TRAILING COMPANION", px + 165, py + 125);
 
   const petsList = [
     { id: 'dog', name: "Cute Golden Dog 🐶" },
@@ -1919,12 +2067,12 @@ const drawClosetWindowModal = (w: number, h: number) => {
     const hasU = engine.inventory.pets.includes(p.id);
 
     ctx.fillStyle = isEquipped ? '#73ef7d' : (hasU ? '#333c57' : '#10121c');
-    ctx.fillRect(px + 165, py + 112 + i * 15, 140, 12);
-    ctx.strokeRect(px + 165, py + 112 + i * 15, 140, 12);
+    ctx.fillRect(px + 165, py + 131 + i * 15, 140, 12);
+    ctx.strokeRect(px + 165, py + 131 + i * 15, 140, 12);
 
     ctx.fillStyle = isEquipped ? '#10121c' : (hasU ? '#ffffff' : '#566c86');
     ctx.font = '5.8px monospace';
-    ctx.fillText(`${p.name} ${isEquipped ? '(TRAIL)' : ''}`, px + 171, py + 120 + i * 15);
+    ctx.fillText(`${p.name} ${isEquipped ? '(TRAIL)' : ''}`, px + 171, py + 139 + i * 15);
   }
 
   // Exit info
@@ -2439,6 +2587,35 @@ const loop = () => {
         ctx.fillStyle = '#36e5f0'; // Glowing magnetic energy head
         ctx.beginPath();
         ctx.arc(engine.hookshot.x, engine.hookshot.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Render Laser Cutter Beam with plasma neon glows
+      if (engine.activeLaserBeam && engine.activeLaserBeam.life > 0) {
+        const b = engine.activeLaserBeam;
+        ctx.save();
+        ctx.beginPath();
+        // Outer glowing crimson plasma sleeve
+        ctx.strokeStyle = 'rgba(255, 30, 80, 0.65)';
+        ctx.lineWidth = 4.5 * b.life;
+        ctx.moveTo(b.x1, b.y1);
+        ctx.lineTo(b.x2, b.y2);
+        ctx.stroke();
+
+        // Inner glowing white core
+        ctx.beginPath();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5 * b.life;
+        ctx.moveTo(b.x1, b.y1);
+        ctx.lineTo(b.x2, b.y2);
+        ctx.stroke();
+
+        // Target hit heat sparks
+        const hitScale = 1.0 + Math.sin(Date.now() * 0.05) * 0.3;
+        ctx.fillStyle = '#ff1e50';
+        ctx.beginPath();
+        ctx.arc(b.x2, b.y2, 5 * hitScale * b.life, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }

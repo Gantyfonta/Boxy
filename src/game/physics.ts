@@ -96,7 +96,8 @@ export class GameEngine {
     shopRestockTimer: 30, // 30 seconds interval
     activePlantingBedId: null as number | null,
     isDeporcusOpen: false,
-    deporcusRotation: 0
+    deporcusRotation: 0,
+    fertilizerTimeRemaining: 0
   };
   public loadingProgress: number = 0;
   public loadingAction: () => void = () => {};
@@ -170,6 +171,14 @@ export class GameEngine {
     id?: string;
     x: number;
     y: number;
+  } | null = null;
+
+  public activeLaserBeam: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    life: number;
   } | null = null;
 
   public ropes: {
@@ -267,22 +276,38 @@ export class GameEngine {
       const savedFarmingRestock = localStorage.getItem('sector7_farm_restock');
       if (savedFarmingRestock) this.farmingState.shopRestockTimer = parseFloat(savedFarmingRestock);
 
+      const savedFarmingFertilizer = localStorage.getItem('sector7_farm_fertilizer');
+      let initialFertilizer = 0;
+      if (savedFarmingFertilizer) {
+        initialFertilizer = parseFloat(savedFarmingFertilizer);
+        this.farmingState.fertilizerTimeRemaining = initialFertilizer;
+      }
+
       // Real-time Offline Progression updates
       const savedLastTime = localStorage.getItem('sector7_farm_last_save');
       if (savedLastTime) {
         const elapsedSecs = (Date.now() - parseFloat(savedLastTime)) / 1000;
         if (elapsedSecs > 1.5) {
+          // Calculate fertilizer duration spent offline vs normal
+          const fertDuration = Math.min(elapsedSecs, initialFertilizer);
+          const normalDuration = Math.max(0, elapsedSecs - fertDuration);
+
+          // Effective offline growth is accelerated at 2x during the boost
+          const effectiveSecs = (fertDuration * 2.0) + normalDuration;
+
+          this.farmingState.fertilizerTimeRemaining = Math.max(0, initialFertilizer - elapsedSecs);
+
           // Advance growth timer on all growing beds
           for (const bed of this.farmingState.beds) {
             if (bed.plantedCropId && bed.growthProgress < 1.0) {
               const crop = CROP_TYPES.find(c => c.id === bed.plantedCropId);
               if (crop) {
-                const addedProgress = elapsedSecs / crop.growthTime;
+                const addedProgress = effectiveSecs / crop.growthTime;
                 bed.growthProgress = Math.min(1.0, bed.growthProgress + addedProgress);
                 if (bed.growthProgress >= 1.0) {
                   bed.growthSecondsRemaining = 0;
                 } else {
-                  bed.growthSecondsRemaining = Math.max(0, bed.growthSecondsRemaining - elapsedSecs);
+                  bed.growthSecondsRemaining = Math.max(0, bed.growthSecondsRemaining - effectiveSecs);
                 }
               }
             }
@@ -326,6 +351,7 @@ export class GameEngine {
       localStorage.setItem('sector7_farm_inventory', JSON.stringify(this.farmingState.inventory));
       localStorage.setItem('sector7_farm_stock', JSON.stringify(this.farmingState.shopStock));
       localStorage.setItem('sector7_farm_restock', this.farmingState.shopRestockTimer.toString());
+      localStorage.setItem('sector7_farm_fertilizer', this.farmingState.fertilizerTimeRemaining.toString());
       localStorage.setItem('sector7_farm_last_save', Date.now().toString());
     } catch (e) {
       console.warn("Saving failure", e);
@@ -347,11 +373,15 @@ export class GameEngine {
     this.loadingProgress = 0;
     this.loadingText = text;
     this.loadingAction = callback;
+    this.ropes = [];
+    this.toolgunSelected = null;
     sound.playUnlock();
   }
 
   public setLobbyMode() {
     this.gameMode = 'lobby';
+    this.ropes = [];
+    this.toolgunSelected = null;
     this.boxes = [];
     this.lootItems = [];
     this.particles = [];
@@ -1368,6 +1398,82 @@ export class GameEngine {
     return false;
   }
 
+  public purchaseFertilizerSpeedBoost(cost: number, duration: number): boolean {
+    if (this.coins >= cost) {
+      this.coins -= cost;
+      this.farmingState.fertilizerTimeRemaining += duration;
+      this.saveProfileToStorage();
+      sound.playUnlock();
+      return true;
+    }
+    return false;
+  }
+
+  public shootLaserCutter(targetX: number, targetY: number) {
+    if (this.currentTool !== 'laser_cutter') return;
+
+    sound.playTone(650, 400, 0.1, "sawtooth", 0.35);
+
+    const px = this.player.x + this.player.width / 2;
+    const py = this.player.y + 12;
+
+    this.activeLaserBeam = {
+      x1: px,
+      y1: py,
+      x2: targetX,
+      y2: targetY,
+      life: 1.0,
+    };
+
+    // Find if the cursor clicked/intersected any unopened crate
+    for (const box of this.boxes) {
+      if (!box.isOpened) {
+        if (targetX >= box.x && targetX <= box.x + box.width && targetY >= box.y && targetY <= box.y + box.height) {
+          this.openBox(box);
+          // Splinter sparks
+          for (let i = 0; i < 6; i++) {
+            this.particles.push({
+              id: Math.random().toString(36).substring(2, 11),
+              type: 'fire',
+              x: targetX,
+              y: targetY,
+              vx: Math.random() * 4 - 2,
+              vy: -Math.random() * 4,
+              color: '#ef7d57',
+              size: Math.random() * 2 + 1,
+              life: 1.0,
+              decay: 0.05,
+              angle: Math.random() * Math.PI * 2,
+              angularVelocity: Math.random() * 0.1 - 0.05,
+            });
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  public shootVacuumHarvester(targetX: number, targetY: number) {
+    if (this.currentTool !== 'vacuum_harvester') return;
+
+    sound.playTone(320, 180, 0.15, "sine", 0.45);
+
+    const px = this.player.x + this.player.width / 2;
+    const py = this.player.y + this.player.height / 2;
+
+    // Apply quick instant extra pulling velocity to all floor loot items
+    for (const item of this.lootItems) {
+      const dx = px - item.x;
+      const dy = py - item.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 260) {
+        const force = 4.2;
+        item.vx += (dx / dist) * force;
+        item.vy += (dy / dist) * force;
+      }
+    }
+  }
+
   public purchaseCosmeticUnlock(cosName: string, coinCost: number): boolean {
     if (this.coins >= coinCost) {
       this.coins -= coinCost;
@@ -1667,6 +1773,14 @@ export class GameEngine {
   public update() {
     this.updateCameraShake();
     
+    // Decay active red laser beam if active
+    if (this.activeLaserBeam) {
+      this.activeLaserBeam.life -= 0.12; // lasts for ~8 frames
+      if (this.activeLaserBeam.life <= 0) {
+        this.activeLaserBeam = null;
+      }
+    }
+
     if (this.gameMode === 'main_menu') {
       return;
     }
@@ -1674,6 +1788,41 @@ export class GameEngine {
     if (this.gameMode === 'loading') {
       this.updateLoading();
       return;
+    }
+
+    // Apply Vacuum Harvester pulling magnetic suction
+    if (this.currentTool === 'vacuum_harvester') {
+      const px = this.player.x + this.player.width / 2;
+      const py = this.player.y + this.player.height / 2;
+      for (const item of this.lootItems) {
+        const dx = px - item.x;
+        const dy = py - item.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 260 && dist > 2) {
+          const force = 0.42;
+          item.vx += (dx / dist) * force;
+          item.vy += (dy / dist) * force;
+          item.vx *= 0.90;
+          item.vy *= 0.90;
+
+          if (Math.random() < 0.1) {
+            this.particles.push({
+              id: Math.random().toString(36).substring(2, 11),
+              type: 'smoke',
+              x: item.x,
+              y: item.y,
+              vx: -(dx / dist) * 1.5,
+              vy: -(dy / dist) * 1.5,
+              color: 'rgba(54, 229, 240, 0.4)',
+              size: Math.random() * 1.4 + 0.8,
+              life: 0.8,
+              decay: 0.05,
+              angle: 0,
+              angularVelocity: 0
+            });
+          }
+        }
+      }
     }
 
     if (this.gameMode === 'farming') {
@@ -1821,6 +1970,8 @@ export class GameEngine {
 
   public setFarmingMode() {
     this.gameMode = 'farming';
+    this.ropes = [];
+    this.toolgunSelected = null;
     this.boxes = [];
     this.lootItems = [];
     this.particles = [];
@@ -1854,15 +2005,39 @@ export class GameEngine {
       this.saveProfileToStorage();
     }
 
+    // Tick deporcus fertilizer duration!
+    if (this.farmingState.fertilizerTimeRemaining > 0) {
+      this.farmingState.fertilizerTimeRemaining = Math.max(0, this.farmingState.fertilizerTimeRemaining - dt);
+    }
+
     // Tick crops grown duration remaining
+    const growMult = this.farmingState.fertilizerTimeRemaining > 0 ? 2.0 : 1.0;
     for (const bed of this.farmingState.beds) {
       if (bed.unlocked && bed.plantedCropId && bed.growthProgress < 1.0) {
         const crop = CROP_TYPES.find(c => c.id === bed.plantedCropId);
         if (crop) {
-          bed.growthProgress = Math.min(1.0, bed.growthProgress + (dt / crop.growthTime));
-          bed.growthSecondsRemaining = Math.max(0, bed.growthSecondsRemaining - dt);
+          bed.growthProgress = Math.min(1.0, bed.growthProgress + ((dt * growMult) / crop.growthTime));
+          bed.growthSecondsRemaining = Math.max(0, bed.growthSecondsRemaining - (dt * growMult));
         }
       }
+    }
+
+    // Spawn green fertilizer particles floating up
+    if (this.farmingState.fertilizerTimeRemaining > 0 && Math.random() < 0.12) {
+      this.particles.push({
+        id: Math.random().toString(36).substring(2, 11),
+        type: 'sparkle',
+        x: Math.random() * this.world.width,
+        y: 200 + Math.random() * 128,
+        vx: Math.random() * 0.4 - 0.2,
+        vy: -Math.random() * 0.8 - 0.4,
+        color: '#73ef7d',
+        size: Math.random() * 1.5 + 1.1,
+        life: 1.0,
+        decay: 0.02,
+        angle: Math.random() * Math.PI,
+        angularVelocity: 0,
+      });
     }
 
     // Tick Deporcus rotation oscillating idle animation
