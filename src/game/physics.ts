@@ -223,7 +223,7 @@ export class GameEngine {
 
   constructor() {
     this.loadProfileFromStorage();
-    this.gameMode = 'main_menu';
+    this.setLobbyMode();
   }
 
   // Save/Load persistence system
@@ -1298,15 +1298,21 @@ export class GameEngine {
   private updateLobby() {
     this.world.width = 640;
 
-    // Check Start Portal gate walking interactions
     const px = this.player.x + this.player.width / 2;
     const py = this.player.y + this.player.height / 2;
-    const startZoneX = 520;
 
-    if (Math.hypot(px - startZoneX, py - (this.world.height - 48)) < 22) {
-      // Trigger game starting run automatically when they step on it!
+    // Check Run Portal walking interaction (glowing elevator at X = 480)
+    const runX = 480;
+    if (Math.hypot(px - runX, py - (this.world.height - 48)) < 22) {
       this.player.x = 240; // recoil back
       this.startNewRun();
+    }
+
+    // Check Farm Portal walking interaction (glowing elevator at X = 580)
+    const farmX = 580;
+    if (Math.hypot(px - farmX, py - (this.world.height - 48)) < 22) {
+      this.player.x = 240; // recoil back
+      this.setFarmingMode();
     }
   }
 
@@ -2278,9 +2284,6 @@ export class GameEngine {
         if (isCeilingStuck) {
           b.vy = 0;
           b.vx = 0;
-        } else if (b.type === 'hover') {
-          b.vy *= 0.85;
-          b.vx *= this.world.friction;
         } else {
           b.vy += this.world.gravity;
           b.vx *= this.world.friction;

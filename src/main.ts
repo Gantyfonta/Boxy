@@ -37,11 +37,11 @@ window.addEventListener("unhandledrejection", (e) => {
 // Constant internal resolution for retro pixel scaling
 const width = 640;
 const height = 360;
-const scale = 1; // Unused for rendering transforms because we render to internal buffer 1:1 and let CSS scale it
+const scale = 2; // Double pixel count for crisp text and asset rendering
 
 // Assign base dimensions
-canvas.width = width;
-canvas.height = height;
+canvas.width = width * scale;
+canvas.height = height * scale;
 
 // Synchronize size constraints with physics limits
 engine.world.width = width;
@@ -103,13 +103,13 @@ const handleKeyDown = (e: KeyboardEvent) => {
         engine.farmingState.activePlantingBedId = null;
         sound.playTick();
       } else {
-        engine.gameMode = 'main_menu';
+        engine.setLobbyMode();
         sound.playTick();
       }
       return;
     }
-    if (engine.gameMode === 'lobby' || engine.gameMode === 'game_run') {
-      engine.gameMode = 'main_menu';
+    if (engine.gameMode === 'game_run') {
+      engine.setLobbyMode();
       sound.playTick();
       return;
     }
@@ -330,7 +330,7 @@ const handleMouseDown = (e: MouseEvent) => {
 
     // Return menu top right button
     if (mx >= 540 && mx <= 628 && my >= 4 && my <= 28) {
-      engine.gameMode = 'main_menu';
+      engine.setLobbyMode();
       sound.playTick();
       return;
     }
@@ -392,9 +392,14 @@ const handleMouseDown = (e: MouseEvent) => {
   // Start elevator/portal quick clicking check in Lobby
   if (engine.gameMode === 'lobby') {
     const px = engine.player.x + engine.player.width / 2;
-    // start gate is at 520
-    if (Math.abs(mx - 520) < 25 && my > height - 80) {
+    // start gate (Run Portal) is at 480
+    if (Math.abs(mx - 480) < 25 && my > height - 80) {
       engine.startNewRun();
+      return;
+    }
+    // farm gate is at 580
+    if (Math.abs(mx - 580) < 25 && my > height - 80) {
+      engine.setFarmingMode();
       return;
     }
     // Truck click unload
@@ -805,22 +810,39 @@ const drawInteractiveSectorDecorations = (w: number, h: number) => {
     ctx.fillStyle = '#ffcd75';
     ctx.fillText("CLOSET", closetX, groundY - 32);
 
-    // 3. START ELEVATOR PORTAL
-    const exitX = 520;
+    // 3. RUN PORTAL
+    const runX = 480;
     // Glowing chamber pillar outline
     ctx.strokeStyle = '#73ef7d';
     ctx.lineWidth = 2;
-    ctx.strokeRect(exitX - 16, groundY - 42, 32, 42);
+    ctx.strokeRect(runX - 16, groundY - 42, 32, 42);
     ctx.fillStyle = 'rgba(115, 239, 125, 0.18)';
-    ctx.fillRect(exitX - 16, groundY - 42, 32, 42);
+    ctx.fillRect(runX - 16, groundY - 42, 32, 42);
 
     // Grid vertical lines glowing oscillation
     ctx.fillStyle = '#73ef7d';
-    ctx.fillRect(exitX - 13 + Math.floor(Date.now() / 150) % 22, groundY - 40, 2, 40);
+    ctx.fillRect(runX - 13 + Math.floor(Date.now() / 150) % 22, groundY - 40, 2, 40);
 
     ctx.font = 'bold 6.5px monospace';
     ctx.fillStyle = '#73ef7d';
-    ctx.fillText("RUN PORTAL", exitX, groundY - 46);
+    ctx.fillText("RUN PORTAL", runX, groundY - 46);
+
+    // 4. FARM PORTAL
+    const farmX = 580;
+    // Glowing warm amber outline
+    ctx.strokeStyle = '#ffe385';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(farmX - 16, groundY - 42, 32, 42);
+    ctx.fillStyle = 'rgba(255, 227, 133, 0.18)';
+    ctx.fillRect(farmX - 16, groundY - 42, 32, 42);
+
+    // Grid vertical lines glowing oscillation
+    ctx.fillStyle = '#ffe385';
+    ctx.fillRect(farmX - 13 + Math.floor(Date.now() / 150) % 22, groundY - 40, 2, 40);
+
+    ctx.font = 'bold 6.5px monospace';
+    ctx.fillStyle = '#ffe385';
+    ctx.fillText("FARM PORTAL", farmX, groundY - 46);
   } else if (engine.gameMode === 'game_run') {
     // Draw sliding crane bracket tracks
     ctx.fillStyle = '#333c57';
@@ -1682,9 +1704,14 @@ const drawInteractiveBannersAndHUD = (w: number, h: number) => {
       drawKeyInteractiveBubble(370, groundY - 36, "[E] DRESS CUSTOM CLOSET");
     }
 
-    // Elevator Start level
-    if (Math.abs(px - 520) < 26) {
-      drawKeyInteractiveBubble(520, groundY - 50, "[E] START NEW FACILITY RUN");
+    // Run Portal
+    if (Math.abs(px - 480) < 26) {
+      drawKeyInteractiveBubble(480, groundY - 50, "WALK IN TO START NEW RUN");
+    }
+
+    // Farm Portal
+    if (Math.abs(px - 580) < 26) {
+      drawKeyInteractiveBubble(580, groundY - 50, "WALK IN TO ENTER FARM GARDEN");
     }
   }
 
