@@ -655,6 +655,14 @@ export class GameEngine {
       const by = box.y + box.height / 2;
 
       if (bx >= truckBedLeft && bx <= truckBedRight && by >= truckBedTop && by <= truckBedBottom) {
+        if (this.truckCargoCount >= targetCapacity) {
+          // Can't load, pop it out
+          box.vy = -3;
+          box.vx = -2;
+          this.spawnFloatingText("TRUCK FULL!", bx, by - 20, "#ef7d57");
+          continue;
+        }
+
         // Box loaded successfully!
         const gBox = box as GameBox;
         this.truckCargo.push(gBox.rarity);
@@ -946,6 +954,12 @@ export class GameEngine {
   }
 
   public tryOpenBox() {
+    if (this.gameMode !== 'lobby') {
+      sound.playSplat();
+      this.spawnFloatingText("MUST UNLOAD IN LOBBY!", this.player.x, this.player.y - 12, "#ef7d57");
+      return;
+    }
+
     let target: Box | null = null;
     let minDist = 48;
 
@@ -969,6 +983,7 @@ export class GameEngine {
 
   public openBox(box: Box) {
     if (box.isOpened) return;
+    box.isOpened = true;
 
     sound.playBubble();
     sound.playChime();
@@ -985,15 +1000,15 @@ export class GameEngine {
     let unlockedType: 'cosmetic' | 'tool' | 'pet' | null = null;
 
     if (gBox.rarity === 'common') {
-      lootCoins = Math.floor(Math.random() * 25) + 20; // 20 - 45
+      lootCoins = Math.floor(Math.random() * 8) + 5; // 5 - 12
       if (Math.random() < 0.25) {
         unlockedType = 'cosmetic';
         const pools = ['hat', 'glasses'];
         unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
       }
     } else if (gBox.rarity === 'rare') {
-      lootCoins = Math.floor(Math.random() * 45) + 40; // 40 - 85
-      lootGems = Math.floor(Math.random() * 3) + 1; // 1 - 3
+      lootCoins = Math.floor(Math.random() * 15) + 10; // 10 - 24
+      lootGems = Math.floor(Math.random() * 2) + 1; // 1 - 2
       if (Math.random() < 0.22) {
         unlockedType = 'pet';
         unlockedRewardName = 'dog';
@@ -1002,16 +1017,16 @@ export class GameEngine {
         unlockedRewardName = 'hair';
       }
     } else if (gBox.rarity === 'epic') {
-      lootCoins = Math.floor(Math.random() * 80) + 70; // 70 - 150
-      lootGems = Math.floor(Math.random() * 6) + 3; // 3 - 8
+      lootCoins = Math.floor(Math.random() * 30) + 20; // 20 - 49
+      lootGems = Math.floor(Math.random() * 3) + 2; // 2 - 4
       if (Math.random() < 0.35) {
         unlockedType = 'pet';
         const pools = ['cat', 'fish'];
         unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
       }
     } else if (gBox.rarity === 'legendary') {
-      lootCoins = Math.floor(Math.random() * 200) + 150; // 150 - 350
-      lootGems = Math.floor(Math.random() * 15) + 10; // 10 - 25
+      lootCoins = Math.floor(Math.random() * 50) + 40; // 40 - 89
+      lootGems = Math.floor(Math.random() * 5) + 3; // 3 - 7
       if (Math.random() < 0.50) {
         unlockedType = 'pet';
         unlockedRewardName = 'robot';
@@ -1267,6 +1282,11 @@ export class GameEngine {
         b.x = this.world.width - b.width - 10;
         b.vx = -b.vx * 0.25;
         b.squishX = 0.75; b.squishY = 1.25;
+      }
+      
+      if (b.y < 5) {
+        b.y = 5;
+        b.vy = -b.vy * 0.4;
       }
 
       const groundY = this.world.height - 32;
