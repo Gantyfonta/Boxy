@@ -117,8 +117,8 @@ export class GameEngine {
   public activeDroppedRarity: GameRarity = 'common';
 
   // Game Run Cargo Truck properties
-  public truckCargo: GameRarity[] = []; // Loaded cargo waiting to be unboxed in lobby
-  public truckCargoCount: number = 0;
+  public truckCargo: GameRarity[] = ['common', 'rare', 'epic']; // Loaded cargo waiting to be unboxed in lobby
+  public truckCargoCount: number = 3;
 
   // Portal Gun states
   public portals: {
