@@ -203,6 +203,20 @@ const handleKeyDown = (e: KeyboardEvent) => {
         engine.tryUnloadCargoFromLobbyTruck();
         return;
       }
+
+      // 4. Farm Portal Proximity (X = 580, cozy garden)
+      if (Math.abs(px - 580) < 32) {
+        engine.setFarmingMode();
+        sound.playUnlock();
+        return;
+      }
+
+      // 5. Run Portal Proximity (X = 480, infinite box run)
+      if (Math.abs(px - 480) < 32) {
+        engine.startNewRun();
+        sound.playUnlock();
+        return;
+      }
     }
 
     // Default: try lift physical crate. If none closer than 45px, toggle Closet Inventory!
@@ -463,7 +477,7 @@ const handleMouseDown = (e: MouseEvent) => {
 // Handle clicks inside upgrades computer menu
 const handleShopClicks = (mx: number, my: number) => {
   const panelW = 320;
-  const panelH = 200;
+  const panelH = 235;
   const px = (width - panelW) / 2;
   const py = (height - panelH) / 2;
 
@@ -557,8 +571,8 @@ const handleShopClicks = (mx: number, my: number) => {
 
 // Handle equipping inside Wardrobe Costume closet
 const handleClosetClicks = (mx: number, my: number) => {
-  const panelW = 320;
-  const panelH = 200;
+  const panelW = 480;
+  const panelH = 240;
   const px = (width - panelW) / 2;
   const py = (height - panelH) / 2;
 
@@ -569,104 +583,116 @@ const handleClosetClicks = (mx: number, my: number) => {
     return;
   }
 
-  // Handle Cosmetic column selections (Left sector)
-  // Options: Hat, Glasses, Hair, Crown at Y slots: py + 60, py + 90, py + 120, py + 150
-  const col1X = px + 20;
-  const col1W = 130;
+  // Handle Cosmetic column selections (Column 1)
+  const cosItems = [
+    { id: 'hat', name: "Top Hat 🎩" },
+    { id: 'glasses', name: "Cool Shades 😎" },
+    { id: 'hair', name: "Punk Pink Hair 🧑‍🎤" },
+    { id: 'crown', name: "Crown 👑" },
+    { id: 'cowboy_hat', name: "Cowboy Hat 🤠" },
+    { id: 'chef_hat', name: "Chef Hat 🧑‍🍳" },
+    { id: 'wizard_hat', name: "Wizard Hat 🧙" },
+    { id: 'goggled_helmet', name: "Astronaut Helmet 👨‍🚀" }
+  ];
 
-  if (mx >= col1X && mx <= col1X + col1W) {
-    if (my >= py + 55 && my <= py + 75) {
-      if (engine.inventory.cosmetics.includes('hat')) {
-        engine.toggleEquipCosmetic('hat');
+  if (mx >= px + 12 && mx <= px + 150) {
+    const i = Math.floor((my - (py + 44)) / 22);
+    if (i >= 0 && i < cosItems.length) {
+      const item = cosItems[i];
+      if (engine.inventory.cosmetics.includes(item.id)) {
+        engine.toggleEquipCosmetic(item.id);
       } else {
         sound.playSplat();
-        engine.spawnFloatingText("NOT UNBOXED YET! 📦", col1X + 60, py + 65, "#9fadbc");
-      }
-    } else if (my >= py + 85 && my <= py + 105) {
-      if (engine.inventory.cosmetics.includes('glasses')) {
-        engine.toggleEquipCosmetic('glasses');
-      } else {
-        sound.playSplat();
-        engine.spawnFloatingText("NOT UNBOXED YET!", col1X + 60, py + 95, "#9fadbc");
-      }
-    } else if (my >= py + 115 && my <= py + 135) {
-      if (engine.inventory.cosmetics.includes('hair')) {
-        engine.toggleEquipCosmetic('hair');
-      } else {
-        sound.playSplat();
-        engine.spawnFloatingText("NOT UNBOXED YET!", col1X + 60, py + 125, "#9fadbc");
-      }
-    } else if (my >= py + 145 && my <= py + 165) {
-      if (engine.inventory.cosmetics.includes('crown')) {
-        engine.toggleEquipCosmetic('crown');
-      } else {
-        sound.playSplat();
-        engine.spawnFloatingText("NOT UNBOXED YET!", col1X + 60, py + 155, "#9fadbc");
+        engine.spawnFloatingText("NOT UNBOXED YET! 📦", px + 80, py + 54 + i * 22, "#9fadbc");
       }
     }
   }
 
-  // Handle Tools & Pets column selections (Right sector)
-  // Tools: Mouse Cursor, Blue Shamrock, Portal Gun
-  // Pets: Dog, Cat, Fish, Robot
-  const col2X = px + 170;
-  const col2W = 130;
+  // Handle Tools & Pets column selections (Column 2)
+  const toolsList = [
+    { id: 'mouse_cursor', name: "Cursor Pointer Hand 🖱️" },
+    { id: 'shamrock', name: "Clover Shamrock 🍀" },
+    { id: 'portal_gun', name: "Quantum Portal Gun 🔮" },
+    { id: 'hookshot', name: "Magnetic Hookshot 🪝" },
+    { id: 'toolgun', name: "Rope Toolgun 🔫" },
+    { id: 'laser_cutter', name: "Laser Cutter ⚡" },
+    { id: 'vacuum_harvester', name: "Vacuum Harvester 🌀" }
+  ];
 
-  if (mx >= col2X && mx <= col2X + col2W) {
-    // Tool slot 1: Cursor
-    if (my >= py + 38 && my <= py + 49) {
-      if (engine.inventory.tools.includes('mouse_cursor')) engine.toggleEquipTool('mouse_cursor');
-      else sound.playSplat();
+  const petsList = [
+    { id: 'dog', name: "Cute Golden Dog 🐶" },
+    { id: 'cat', name: "Black Kitten 🐱" },
+    { id: 'fish', name: "Fish Tank Orb 🐠" },
+    { id: 'robot', name: "Companion Droid 🤖" },
+    { id: 'ufo', name: "Mini UFO 🛸" },
+    { id: 'slime', name: "Slime Companion 🦠" },
+    { id: 'dragon', name: "Baby Dragon 🐉" },
+    { id: 'piglet', name: "Gardener Piglet 🐷" }
+  ];
+
+  if (mx >= px + 162 && mx <= px + 310) {
+    // Tools check
+    if (my >= py + 42 && my <= py + 119) {
+      const i = Math.floor((my - (py + 42)) / 11);
+      if (i >= 0 && i < toolsList.length) {
+        const t = toolsList[i];
+        if (engine.inventory.tools.includes(t.id)) {
+          engine.toggleEquipTool(t.id);
+        } else {
+          sound.playSplat();
+          engine.spawnFloatingText("NOT BOUGHT YET! 🔒", px + 236, py + 46 + i * 11, "#9fadbc");
+        }
+      }
     }
-    // Tool slot 2: Shamrock
-    else if (my >= py + 50 && my <= py + 61) {
-      if (engine.inventory.tools.includes('shamrock')) engine.toggleEquipTool('shamrock');
-      else sound.playSplat();
+    // Pets check
+    else if (my >= py + 138 && my <= py + 226) {
+      const i = Math.floor((my - (py + 138)) / 11);
+      if (i >= 0 && i < petsList.length) {
+        const p = petsList[i];
+        if (engine.inventory.pets.includes(p.id)) {
+          engine.toggleEquipPet(p.id);
+        } else {
+          sound.playSplat();
+          engine.spawnFloatingText("NOT UNBOXED YET! 📦", px + 236, py + 142 + i * 11, "#9fadbc");
+        }
+      }
     }
-    // Tool slot 3: Portal Gun
-    else if (my >= py + 62 && my <= py + 73) {
-      if (engine.inventory.tools.includes('portal_gun')) engine.toggleEquipTool('portal_gun');
-      else sound.playSplat();
-    }
-    // Tool slot 4: Hookshot
-    else if (my >= py + 74 && my <= py + 85) {
-      if (engine.inventory.tools.includes('hookshot')) engine.toggleEquipTool('hookshot');
-      else sound.playSplat();
-    }
-    // Tool slot 5: Toolgun
-    else if (my >= py + 86 && my <= py + 97) {
-      if (engine.inventory.tools.includes('toolgun')) engine.toggleEquipTool('toolgun');
-      else sound.playSplat();
-    }
-    // Tool slot 6: Laser Cutter
-    else if (my >= py + 98 && my <= py + 109) {
-      if (engine.inventory.tools.includes('laser_cutter')) engine.toggleEquipTool('laser_cutter');
-      else sound.playSplat();
-    }
-    // Tool slot 7: Vacuum Harvester
-    else if (my >= py + 110 && my <= py + 121) {
-      if (engine.inventory.tools.includes('vacuum_harvester')) engine.toggleEquipTool('vacuum_harvester');
-      else sound.playSplat();
-    }
-    // Pet slot 1: Dog
-    else if (my >= py + 128 && my <= py + 142) {
-      if (engine.inventory.pets.includes('dog')) engine.toggleEquipPet('dog');
-      else sound.playSplat();
-    }
-    // Pet slot 2: Cat
-    else if (my >= py + 144 && my <= py + 158) {
-      if (engine.inventory.pets.includes('cat')) engine.toggleEquipPet('cat');
-      else sound.playSplat();
-    }
-    // Pet slot 3: Fish
-    else if (my >= py + 160 && my <= py + 174) {
-      if (engine.inventory.pets.includes('fish')) engine.toggleEquipPet('fish');
-      else sound.playSplat();
-    }
-    // Pet slot 4: Robot
-    else if (my >= py + 176 && my <= py + 190) {
-      if (engine.inventory.pets.includes('robot')) engine.toggleEquipPet('robot');
-      else sound.playSplat();
+  }
+
+  // Handle Orbiting Crop Selection (Column 3)
+  if (mx >= px + 324 && mx <= px + 462) {
+    if (my >= py + 50 && my <= py + 210) {
+      const i = Math.floor((my - (py + 50)) / 16);
+      if (i >= 0 && i < engine.farmingState.inventory.length && i < 10) {
+        const stack = engine.farmingState.inventory[i];
+        if (!engine.equippedCrops) engine.equippedCrops = [];
+        
+        const idx = engine.equippedCrops.findIndex((c: any) => 
+          c.cropId === stack.cropId && c.size === stack.size && c.mutation === stack.mutation
+        );
+
+        if (idx !== -1) {
+          // Unequip
+          engine.equippedCrops.splice(idx, 1);
+          sound.playTick();
+          engine.spawnFloatingText("SHOWCASE REMOVED! 🌾", width / 2, height / 2 - 20, "#df9c5c");
+        } else {
+          // Equip
+          if (engine.equippedCrops.length >= 3) {
+            sound.playSplat();
+            engine.spawnFloatingText("MAX 3 SHOWCASE CROPS!", width / 2, height / 2 - 20, "#ef7d57");
+          } else {
+            engine.equippedCrops.push({
+              cropId: stack.cropId,
+              size: stack.size,
+              mutation: stack.mutation
+            });
+            sound.playUnlock();
+            engine.spawnFloatingText("★ SHOWCASE EQUIPPED! ★", width / 2, height / 2 - 20, "#73ef7d");
+          }
+        }
+        engine.saveProfileToStorage();
+      }
     }
   }
 };
@@ -1541,6 +1567,37 @@ const drawWornCosmetics = (px: number, py: number, flipX: boolean) => {
     sprites.drawSprite(ctx, 'cosmetic_hair', headX - 3 * facingMod, headY - 1, 20, 14, { flipX: flipX });
   } else if (engine.currentCosmetic === 'crown') {
     sprites.drawSprite(ctx, 'loot_crown', headX - 2 * facingMod, headY - 5, 18, 14, { flipX: flipX });
+  } else if (engine.currentCosmetic === 'cowboy_hat') {
+    ctx.fillStyle = '#a24b31';
+    ctx.fillRect(headX - 4 * facingMod - 4, headY + 1, 18, 2);
+    ctx.fillRect(headX - 4 * facingMod - 1, headY - 5, 12, 6);
+    ctx.fillStyle = '#ffcd75';
+    ctx.fillRect(headX - 4 * facingMod - 1, headY, 12, 1);
+  } else if (engine.currentCosmetic === 'chef_hat') {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(headX - 4 * facingMod, headY - 5, 11, 6);
+    ctx.beginPath();
+    ctx.arc(headX - 4 * facingMod + 2, headY - 5, 3.5, 0, Math.PI * 2);
+    ctx.arc(headX - 4 * facingMod + 9, headY - 5, 3.5, 0, Math.PI * 2);
+    ctx.arc(headX - 4 * facingMod + 5.5, headY - 8, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (engine.currentCosmetic === 'wizard_hat') {
+    ctx.fillStyle = '#4fa9ff';
+    ctx.beginPath();
+    ctx.moveTo(headX - 4 * facingMod - 3, headY + 2);
+    ctx.lineTo(headX - 4 * facingMod + 13, headY + 2);
+    ctx.lineTo(headX - 4 * facingMod + 5, headY - 10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffcd75';
+    ctx.fillRect(headX - 4 * facingMod, headY + 1, 10, 1);
+    ctx.fillStyle = '#ffe385';
+    ctx.fillRect(headX - 4 * facingMod + 4, headY - 3, 2, 2);
+  } else if (engine.currentCosmetic === 'goggled_helmet') {
+    ctx.fillStyle = '#9fadbc';
+    ctx.fillRect(headX - 4 * facingMod, headY - 4, 12, 12);
+    ctx.fillStyle = '#36e5f0';
+    ctx.fillRect(headX - 4 * facingMod + 2.5 + (flipX ? -1 : 1), headY, 7, 6);
   }
 };
 
@@ -1562,6 +1619,80 @@ const drawCarriedTool = (px: number, py: number, flipX: boolean) => {
   else if (engine.currentTool === 'vacuum_harvester') toolSprite = 'tool_vacuum_harvester';
 
   sprites.drawSprite(ctx, toolSprite, tx, ty, 12, 12, { flipX: flipX });
+};
+
+// Render up to 3 showcase crops orbiting the player center with dynamic scaling, glowing particle effects, and customized sparkle emitters
+const drawOrbitingCrops = (px: number, py: number) => {
+  if (!engine.equippedCrops || engine.equippedCrops.length === 0) return;
+
+  const count = engine.equippedCrops.length;
+  const time = Date.now() / 1200; // Orbit speed
+  const radius = 22; // Orbit distance around player
+
+  engine.equippedCrops.forEach((c: any, index: number) => {
+    // Distribute angles evenly (e.g. 120 deg for 3 crops)
+    const angle = time + (index * (Math.PI * 2) / count);
+    
+    // Orbit relative to center of player
+    const ox = px + 12 + Math.cos(angle) * radius;
+    const oy = py + 16 + Math.sin(angle) * radius;
+
+    // Draw crop icon (cropConf)
+    const cropConf = CROP_TYPES.find((cr) => cr.id === c.cropId);
+    if (!cropConf) return;
+
+    // Scale representation (small: 6px, cosmic: 16px)
+    let sizePx = 10;
+    if (c.size === 'small') sizePx = 7;
+    else if (c.size === 'large') sizePx = 12;
+    else if (c.size === 'gigantic') sizePx = 15;
+    else if (c.size === 'cosmic') sizePx = 19;
+
+    // Mutation glow tint
+    const mConf = CROP_MUTATIONS.find((m) => m.id === c.mutation);
+    if (mConf && mConf.id !== 'none') {
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = mConf.color;
+      
+      // Draw trailing sparkle particles occasionally!
+      if (Math.random() < 0.12) {
+        engine.particles.push({
+          id: String(Math.random()),
+          type: 'star',
+          x: ox + Math.random() * 6 - 3,
+          y: oy + Math.random() * 6 - 3,
+          vx: Math.random() * 0.4 - 0.2,
+          vy: Math.random() * 0.4 - 0.2,
+          color: mConf.color,
+          size: Math.random() * 2 + 1,
+          life: 1.0,
+          decay: 0.05,
+          angle: 0,
+          angularVelocity: 0,
+          gravityAffect: false
+        });
+      }
+    }
+
+    // Draw a neat glowing/sparkling backdrop circle
+    ctx.fillStyle = mConf && mConf.id !== 'none' ? mConf.tint : 'rgba(255, 255, 255, 0.2)';
+    ctx.beginPath();
+    ctx.arc(ox + 4, oy + 4, sizePx / 2 + 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Render the sprite
+    sprites.drawSprite(ctx, cropConf.spriteName, ox, oy, sizePx, sizePx);
+
+    // Reset shadow
+    ctx.shadowBlur = 0;
+
+    // Add tiny holographic orbits around giant/cosmic or heavily mutated crops!
+    if (c.size === 'cosmic' || c.size === 'gigantic') {
+      ctx.strokeStyle = mConf ? mConf.color : '#ffcd75';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(ox - 3, oy - 3, sizePx + 6, sizePx + 6);
+    }
+  });
 };
 
 // Draw swirl ring portals with glowing circular gradients
@@ -1985,8 +2116,8 @@ const drawShopWindowModal = (w: number, h: number) => {
 
 // Render Closet profile wardrobe equip menu
 const drawClosetWindowModal = (w: number, h: number) => {
-  const panelW = 320;
-  const panelH = 220;
+  const panelW = 480;
+  const panelH = 240;
   const px = (w - panelW) / 2;
   const py = (h - panelH) / 2;
 
@@ -2006,7 +2137,7 @@ const drawClosetWindowModal = (w: number, h: number) => {
   ctx.fillStyle = '#ffcd75';
   ctx.font = 'bold 8px monospace';
   ctx.textAlign = 'left';
-  ctx.fillText("👚 FACILITY CLOSET: EQUIP COSMETICS & AMULETS", px + 12, py + 14);
+  ctx.fillText("👚 WARDROBE CLOSET: COSMETICS, PETS, & SHOWCASE CROPS", px + 12, py + 14);
 
   // X Button
   ctx.fillStyle = '#a24b31';
@@ -2016,17 +2147,21 @@ const drawClosetWindowModal = (w: number, h: number) => {
   ctx.textAlign = 'center';
   ctx.fillText("X", px + panelW - 11, py + 13);
 
-  // LEFT COLUMN - COSMETICS (Hats)
+  // COLUMN 1 - HEAD COSMETICS (Hats)
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ff8be6';
   ctx.font = 'bold 7.5px monospace';
-  ctx.fillText("👒 UNBOXABLE HEAD COSMETICS", px + 15, py + 38);
+  ctx.fillText("👒 UNBOXABLE HEAD WEAR", px + 12, py + 34);
 
   const cosItems = [
     { id: 'hat', name: "Top Hat 🎩" },
     { id: 'glasses', name: "Cool Shades 😎" },
-    { id: 'hair', name: "Punk Pink Hair 🧑‍🎤" },
-    { id: 'crown', name: "Crown 👑" }
+    { id: 'hair', name: "Pink Punk Hair 🧑‍🎤" },
+    { id: 'crown', name: "Crown 👑" },
+    { id: 'cowboy_hat', name: "Cowboy Hat 🤠" },
+    { id: 'chef_hat', name: "Chef Hat 🧑‍🍳" },
+    { id: 'wizard_hat', name: "Wizard Hat 🧙" },
+    { id: 'goggled_helmet', name: "Astro Helmet 👨‍🚀" }
   ];
 
   for (let i = 0; i < cosItems.length; i++) {
@@ -2034,22 +2169,22 @@ const drawClosetWindowModal = (w: number, h: number) => {
     const hasUnlocked = engine.inventory.cosmetics.includes(item.id);
     const isWorn = engine.currentCosmetic === item.id;
 
-    ctx.fillStyle = isWorn ? '#73ef7d' : (hasUnlocked ? '#333c57' : '#10121c');
-    ctx.fillRect(px + 15, py + 52 + i * 30, 130, 22);
+    ctx.fillStyle = isWorn ? '#4fa9ff' : (hasUnlocked ? '#333c57' : '#10121c');
+    ctx.fillRect(px + 12, py + 44 + i * 22, 138, 18);
     ctx.strokeStyle = '#10121c';
-    ctx.strokeRect(px + 15, py + 52 + i * 30, 130, 22);
+    ctx.strokeRect(px + 12, py + 44 + i * 22, 138, 18);
 
-    ctx.fillStyle = isWorn ? '#10121c' : (hasUnlocked ? '#f4f4f4' : '#566c86');
-    ctx.font = 'bold 6.5px monospace';
-    ctx.fillText(`${item.name} ${isWorn ? '(WORN)' : ''}`, px + 22, py + 62 + i * 30);
-    ctx.font = '5.5px monospace';
-    ctx.fillText(hasUnlocked ? "Click to Equip/Mute" : "🔒 Collect crates to unlock", px + 22, py + 70 + i * 30);
+    ctx.fillStyle = isWorn ? '#ffffff' : (hasUnlocked ? '#f4f4f4' : '#566c86');
+    ctx.font = 'bold 6.2px monospace';
+    ctx.fillText(`${item.name} ${isWorn ? '(ACTIVE)' : ''}`, px + 16, py + 52 + i * 22);
+    ctx.font = '5.2px monospace';
+    ctx.fillText(hasUnlocked ? "Equipped: Toggle wear" : "🔒 Collect crates to unbox", px + 16, py + 59 + i * 22);
   }
 
-  // RIGHT COLUMN - GADGETS & COMPANIONS
+  // COLUMN 2 - GADGET TIERS & COMPANIONS
   ctx.fillStyle = '#36e5f0';
   ctx.font = 'bold 7.5px monospace';
-  ctx.fillText("🛠️ TOOLS & ACTIVE COMPANIONS", px + 165, py + 33);
+  ctx.fillText("🛠️ UTILITY TOOLS", px + 162, py + 34);
 
   const toolsList = [
     { id: 'mouse_cursor', name: "Cursor Pointer Hand 🖱️" },
@@ -2061,32 +2196,36 @@ const drawClosetWindowModal = (w: number, h: number) => {
     { id: 'vacuum_harvester', name: "Vacuum Harvester 🌀" }
   ];
 
+  const petsList = [
+    { id: 'dog', name: "Cute Golden Dog 🐶" },
+    { id: 'cat', name: "Black Kitten 🐱" },
+    { id: 'fish', name: "Fish Tank Orb 🐠" },
+    { id: 'robot', name: "Companion Droid 🤖" },
+    { id: 'ufo', name: "Mini UFO 🛸" },
+    { id: 'slime', name: "Slime Companion 🦠" },
+    { id: 'dragon', name: "Baby Dragon 🐉" },
+    { id: 'piglet', name: "Gardener Piglet 🐷" }
+  ];
+
   for (let i = 0; i < toolsList.length; i++) {
     const t = toolsList[i];
     const isEquipped = engine.currentTool === t.id;
     const hasU = engine.inventory.tools.includes(t.id);
 
     ctx.fillStyle = isEquipped ? '#73ef7d' : (hasU ? '#333c57' : '#10121c');
-    ctx.fillRect(px + 165, py + 38 + i * 12, 140, 10);
+    ctx.fillRect(px + 162, py + 42 + i * 11, 148, 9);
     ctx.strokeStyle = '#10121c';
-    ctx.strokeRect(px + 165, py + 38 + i * 12, 140, 10);
+    ctx.strokeRect(px + 162, py + 42 + i * 11, 148, 9);
 
     ctx.fillStyle = isEquipped ? '#10121c' : (hasU ? '#ffffff' : '#566c86');
     ctx.font = '5.4px monospace';
-    ctx.fillText(`${t.name} ${isEquipped ? '(HOLD)' : ''}`, px + 171, py + 45 + i * 12);
+    ctx.fillText(`${t.name} ${isEquipped ? '(HOLD)' : ''}`, px + 166, py + 49 + i * 11);
   }
 
-  // PETS LISTING
+  // Column 2 - PETS
   ctx.fillStyle = '#ffcd75';
-  ctx.font = 'bold 7px monospace';
-  ctx.fillText("🐾 LITTLE MINI PET TRAILING COMPANION", px + 165, py + 125);
-
-  const petsList = [
-    { id: 'dog', name: "Cute Golden Dog 🐶" },
-    { id: 'cat', name: "Black Kitten 🐱" },
-    { id: 'fish', name: "Fish Tank Orb 🐠" },
-    { id: 'robot', name: "Companion Droid 🤖" }
-  ];
+  ctx.font = 'bold 7.5px monospace';
+  ctx.fillText("🐾 COMPANION PETS", px + 162, py + 130);
 
   for (let i = 0; i < petsList.length; i++) {
     const p = petsList[i];
@@ -2094,19 +2233,66 @@ const drawClosetWindowModal = (w: number, h: number) => {
     const hasU = engine.inventory.pets.includes(p.id);
 
     ctx.fillStyle = isEquipped ? '#73ef7d' : (hasU ? '#333c57' : '#10121c');
-    ctx.fillRect(px + 165, py + 131 + i * 15, 140, 12);
-    ctx.strokeRect(px + 165, py + 131 + i * 15, 140, 12);
+    ctx.fillRect(px + 162, py + 138 + i * 11, 148, 9);
+    ctx.strokeStyle = '#10121c';
+    ctx.strokeRect(px + 162, py + 138 + i * 11, 148, 9);
 
     ctx.fillStyle = isEquipped ? '#10121c' : (hasU ? '#ffffff' : '#566c86');
-    ctx.font = '5.8px monospace';
-    ctx.fillText(`${p.name} ${isEquipped ? '(TRAIL)' : ''}`, px + 171, py + 139 + i * 15);
+    ctx.font = '5.4px monospace';
+    ctx.fillText(`${p.name} ${isEquipped ? '(TRAIL)' : ''}`, px + 166, py + 145 + i * 11);
+  }
+
+  // COLUMN 3 - SHOWCASE ORBITING CROPS
+  ctx.fillStyle = '#73ef7d';
+  ctx.font = 'bold 7.5px monospace';
+  ctx.fillText("🌾 ORBITING CROPS", px + 324, py + 34);
+
+  ctx.fillStyle = '#9fadbc';
+  ctx.font = '5.2px monospace';
+  ctx.fillText("Show off cropped sizes/mutations!", px + 324, py + 44);
+
+  const harvestedCrops = engine.farmingState.inventory;
+  if (!engine.equippedCrops) engine.equippedCrops = [];
+
+  if (harvestedCrops.length === 0) {
+    ctx.fillStyle = '#566c86';
+    ctx.font = '6px monospace';
+    ctx.fillText("❌ No crops harvested yet!", px + 324, py + 62);
+    ctx.fillText("Go to COZY GARDEN via portal,", px + 324, py + 72);
+    ctx.fillText("farm seeds, & reap mutated crops", px + 324, py + 82);
+    ctx.fillText("to equip them here!", px + 324, py + 92);
+  } else {
+    harvestedCrops.slice(0, 10).forEach((stack, i) => {
+      const isEquipped = engine.equippedCrops.some((c: any) => 
+        c.cropId === stack.cropId && c.size === stack.size && c.mutation === stack.mutation
+      );
+
+      ctx.fillStyle = isEquipped ? '#ff8be6' : '#10121c';
+      ctx.fillRect(px + 324, py + 50 + i * 16, 138, 14);
+      ctx.strokeStyle = '#10121c';
+      ctx.strokeRect(px + 324, py + 50 + i * 16, 138, 14);
+
+      const mConf = CROP_MUTATIONS.find(m => m.id === stack.mutation);
+      const cropConf = CROP_TYPES.find(c => c.id === stack.cropId);
+      const cropName = cropConf ? cropConf.name.split(' ').slice(0, -1).join(' ') || cropConf.name : stack.cropId;
+      const cropEmoji = cropConf ? cropConf.name.split(' ').pop() || '🌾' : '🌾';
+      
+      ctx.fillStyle = isEquipped ? '#10121c' : '#ffffff';
+      ctx.font = 'bold 5.6px monospace';
+      ctx.fillText(`${cropEmoji} ${cropName.slice(0, 12)}`, px + 328, py + 59 + i * 16);
+
+      ctx.font = '5.0px monospace';
+      ctx.fillStyle = isEquipped ? '#10121c' : (mConf ? mConf.color : '#9fadbc');
+      const labelMut = mConf ? (mConf.id === 'none' ? 'Normal' : mConf.label.slice(0, 8)) : stack.mutation;
+      ctx.fillText(`${stack.size.toUpperCase()} • ${labelMut}`, px + 382, py + 59 + i * 16);
+    });
   }
 
   // Exit info
   ctx.textAlign = 'center';
   ctx.font = '6px monospace';
   ctx.fillStyle = '#9fadbc';
-  ctx.fillText("PRESS ESCAPE OR PLAY OR E TO CLOSE BACKSTAGE CLOSET WINDOW", px + panelW / 2, py + panelH - 8);
+  ctx.fillText("TAP [E] OR CLICK [X] TO DISMISS THE WARDROBE WINDOW", px + panelW / 2, py + panelH - 8);
 };
 
 // Render loading screen with progress loops
@@ -2217,6 +2403,12 @@ const loop = () => {
     const walkSpeed = p.grabbingBox ? 1.75 : 2.5;
     const accel = 0.52;
 
+    // Track keyboard inputs for physics-bound features (e.g. ladders)
+    engine.inputs.up = !!(keys['KeyW'] || keys['ArrowUp'] || keys['Space']);
+    engine.inputs.down = !!(keys['KeyS'] || keys['ArrowDown']);
+    engine.inputs.left = !!(keys['KeyA'] || keys['ArrowLeft']);
+    engine.inputs.right = !!(keys['KeyD'] || keys['ArrowRight']);
+
     // Track WSAD arcade joystick buttons
     if (!isShopOpen && !isClosetOpen && engine.gameMode !== 'loading') {
       if (keys['KeyA'] || keys['ArrowLeft']) {
@@ -2282,6 +2474,7 @@ const loop = () => {
       // Worn Costume (Hat/Glasses/Hair/Crown) & Carried Tool overlays
       drawWornCosmetics(p.x, p.y, p.facing === 'left');
       drawCarriedTool(p.x, p.y, p.facing === 'left');
+      drawOrbitingCrops(p.x, p.y);
 
       // Trail companion Pet if active
       if (engine.currentPet) {
@@ -2467,6 +2660,7 @@ const loop = () => {
       // Worn Costume (Hat/Glasses/Hair/Crown) & Carried Tool (Portal gun/Shamrock) overlays
       drawWornCosmetics(p.x, p.y, p.facing === 'left');
       drawCarriedTool(p.x, p.y, p.facing === 'left');
+      drawOrbitingCrops(p.x, p.y);
 
       // Trail companion Pet if active
       if (engine.currentPet) {

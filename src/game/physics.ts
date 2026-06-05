@@ -76,6 +76,7 @@ export class GameEngine {
   public currentCosmetic: string | null = null;
   public currentTool: string | null = null;
   public currentPet: string | null = null;
+  public equippedCrops: any[] = [];
 
   // State Management
   public gameMode: 'main_menu' | 'lobby' | 'game_run' | 'loading' | 'farming' = 'main_menu';
@@ -251,6 +252,12 @@ export class GameEngine {
       this.currentCosmetic = localStorage.getItem('sector7_eq_cos');
       this.currentTool = localStorage.getItem('sector7_eq_tool');
       this.currentPet = localStorage.getItem('sector7_eq_pet');
+      const savedEquippedCrops = localStorage.getItem('sector7_eq_crops');
+      if (savedEquippedCrops !== null) {
+        this.equippedCrops = JSON.parse(savedEquippedCrops);
+      } else {
+        this.equippedCrops = [];
+      }
 
       // Default Unlocks if empty
       if (this.inventory.cosmetics.length === 0) {
@@ -345,6 +352,8 @@ export class GameEngine {
 
       if (this.currentPet) localStorage.setItem('sector7_eq_pet', this.currentPet);
       else localStorage.removeItem('sector7_eq_pet');
+
+      localStorage.setItem('sector7_eq_crops', JSON.stringify(this.equippedCrops));
 
       // SAVING FARMING STATE
       localStorage.setItem('sector7_farm_beds', JSON.stringify(this.farmingState.beds));
@@ -1297,23 +1306,6 @@ export class GameEngine {
   // Lobby limits and transitions checks
   private updateLobby() {
     this.world.width = 640;
-
-    const px = this.player.x + this.player.width / 2;
-    const py = this.player.y + this.player.height / 2;
-
-    // Check Run Portal walking interaction (glowing elevator at X = 480)
-    const runX = 480;
-    if (Math.hypot(px - runX, py - (this.world.height - 48)) < 22) {
-      this.player.x = 240; // recoil back
-      this.startNewRun();
-    }
-
-    // Check Farm Portal walking interaction (glowing elevator at X = 580)
-    const farmX = 580;
-    if (Math.hypot(px - farmX, py - (this.world.height - 48)) < 22) {
-      this.player.x = 240; // recoil back
-      this.setFarmingMode();
-    }
   }
 
   // Loading Screen Progression Tick
@@ -1662,7 +1654,7 @@ export class GameEngine {
       lootCoins = Math.floor(Math.random() * 8) + 5; // 5 - 12
       if (Math.random() < 0.25) {
         unlockedType = 'cosmetic';
-        const pools = ['hat', 'glasses'];
+        const pools = ['hat', 'glasses', 'chef_hat'];
         unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
       }
     } else if (gBox.rarity === 'rare') {
@@ -1670,17 +1662,23 @@ export class GameEngine {
       lootGems = Math.floor(Math.random() * 2) + 1; // 1 - 2
       if (Math.random() < 0.22) {
         unlockedType = 'pet';
-        unlockedRewardName = 'dog';
+        const pools = ['dog', 'ufo', 'slime'];
+        unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
       } else if (Math.random() < 0.22) {
         unlockedType = 'cosmetic';
-        unlockedRewardName = 'hair';
+        const pools = ['hair', 'cowboy_hat'];
+        unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
       }
     } else if (gBox.rarity === 'epic') {
       lootCoins = Math.floor(Math.random() * 30) + 20; // 20 - 49
       lootGems = Math.floor(Math.random() * 3) + 2; // 2 - 4
       if (Math.random() < 0.35) {
         unlockedType = 'pet';
-        const pools = ['cat', 'fish'];
+        const pools = ['cat', 'fish', 'dragon', 'piglet'];
+        unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
+      } else if (Math.random() < 0.20) {
+        unlockedType = 'cosmetic';
+        const pools = ['wizard_hat'];
         unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
       }
     } else if (gBox.rarity === 'legendary') {
@@ -1688,10 +1686,12 @@ export class GameEngine {
       lootGems = Math.floor(Math.random() * 5) + 3; // 3 - 7
       if (Math.random() < 0.50) {
         unlockedType = 'pet';
-        unlockedRewardName = 'robot';
+        const pools = ['robot', 'dragon'];
+        unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
       } else {
         unlockedType = 'cosmetic';
-        unlockedRewardName = 'crown';
+        const pools = ['crown', 'goggled_helmet'];
+        unlockedRewardName = pools[Math.floor(Math.random() * pools.length)];
       }
     }
 
@@ -2103,9 +2103,9 @@ export class GameEngine {
     if (!crop) return;
 
     // Roll mutations (16% chance)
-    let mutation: 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double' = 'none';
+    let mutation: 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double' | 'neon' | 'quantum' | 'crying' | 'magma' | 'gigantor' = 'none';
     if (Math.random() < 0.16) {
-      const muts = ['golden', 'spicy', 'radioactive', 'albino', 'double'] as const;
+      const muts = ['golden', 'spicy', 'radioactive', 'albino', 'double', 'neon', 'quantum', 'crying', 'magma', 'gigantor'] as const;
       mutation = muts[Math.floor(Math.random() * muts.length)];
     }
 

@@ -20,14 +20,14 @@ export interface FarmPlantBed {
   growthProgress: number; // 0.0 to 1.0
   growthSecondsRemaining: number;
   size: 'small' | 'medium' | 'large' | 'gigantic' | 'cosmic' | null;
-  mutation: 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double' | null;
+  mutation: 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double' | 'neon' | 'quantum' | 'crying' | 'magma' | 'gigantor' | null;
   plantedTimestamp: number | null;
 }
 
 export interface CropInventoryStack {
   cropId: string;
   size: 'small' | 'medium' | 'large' | 'gigantic' | 'cosmic';
-  mutation: 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double';
+  mutation: 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double' | 'neon' | 'quantum' | 'crying' | 'magma' | 'gigantor';
   count: number;
 }
 
@@ -59,12 +59,17 @@ export const CROP_MUTATIONS = [
   { id: 'radioactive', label: 'Radioactive ☢️', mult: 2.0, tint: 'rgba(50, 205, 50, 0.45)', color: '#32cd32' },
   { id: 'albino', label: 'Albino 👻', mult: 1.5, tint: 'rgba(245, 245, 245, 0.6)', color: '#f5f5f5' },
   { id: 'double', label: 'Twin Double 👥', mult: 1.8, tint: 'rgba(238, 130, 238, 0.35)', color: '#ee82ee' },
+  { id: 'neon', label: 'Cyber Neon 🛜', mult: 3.0, tint: 'rgba(0, 255, 255, 0.55)', color: '#00ffff' },
+  { id: 'quantum', label: 'Quantum Glitched 🌀', mult: 5.0, tint: 'rgba(255, 0, 128, 0.45)', color: '#ff0080' },
+  { id: 'crying', label: 'Crying Sadness💧', mult: 1.2, tint: 'rgba(30, 144, 255, 0.4)', color: '#1e90ff' },
+  { id: 'magma', label: 'Volcanic Magma 🔥', mult: 2.2, tint: 'rgba(255, 69, 0, 0.6)', color: '#ff4500' },
+  { id: 'gigantor', label: 'Colossal Gigantor 🪐', mult: 3.5, tint: 'rgba(230, 230, 250, 0.5)', color: '#e6e6fa' },
 ] as const;
 
 export function getCropSellValue(
   cropId: string,
   size: 'small' | 'medium' | 'large' | 'gigantic' | 'cosmic',
-  mutation: 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double'
+  mutation: 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double' | 'neon' | 'quantum' | 'crying' | 'magma' | 'gigantor'
 ): { coins: number; gems: number } {
   const crop = CROP_TYPES.find((c) => c.id === cropId);
   if (!crop) return { coins: 0, gems: 0 };
@@ -81,6 +86,8 @@ export function getCropSellValue(
   let extraGems = 0;
   if (mutation === 'golden') extraGems = 2;
   else if (mutation === 'radioactive') extraGems = 1;
+  else if (mutation === 'quantum') extraGems = 5;
+  else if (mutation === 'neon') extraGems = 3;
 
   return {
     coins: Math.round(baseCoins * sMult * mMult),
