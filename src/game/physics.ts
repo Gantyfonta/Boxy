@@ -1,6 +1,7 @@
 import { Box, Player, LootItem, Particle, FloatingText, PhysicsWorld, BoxType } from './types';
 import { sound } from './sound';
 import { FarmPlantBed, CropInventoryStack, CROP_TYPES, CROP_SIZES, CROP_MUTATIONS, getCropSellValue, generateDePorcusStock, getFarmingBedsLayout } from './farming';
+import { FISH_TYPES, RODS_LIST, FISH_SIZES, FISH_MUTATIONS, getFishSellValue, FishInventoryStack } from './fishing';
 
 const makeId = () => Math.random().toString(36).substring(2, 11);
 
@@ -76,6 +77,7 @@ export class GameEngine {
   public currentCosmetic: string | null = null;
   public currentTool: string | null = null;
   public currentPet: string | null = null;
+  public weather: 'clear' | 'rain' | 'snow' = 'clear';
   public equippedCrops: any[] = [];
   public plasmaBullets: {
     id: string;
@@ -90,7 +92,7 @@ export class GameEngine {
   private isClimbingLadder: boolean = false;
 
   // State Management
-  public gameMode: 'main_menu' | 'lobby' | 'game_run' | 'loading' | 'farming' = 'main_menu';
+  public gameMode: 'main_menu' | 'lobby' | 'game_run' | 'loading' | 'farming' | 'fishing' = 'main_menu';
   
   // Player keyboard inputs for physics engine calculations (especially ladder climb and farming)
   public inputs = {
@@ -111,6 +113,32 @@ export class GameEngine {
     deporcusRotation: 0,
     fertilizerTimeRemaining: 0
   };
+
+  // Dedicated fishing state variables
+  public fishingState = {
+    activeRod: 'rod_wooden',
+    unlockedRods: ['rod_wooden'],
+    inventory: [] as FishInventoryStack[],
+    castState: 'idle' as 'idle' | 'charging' | 'cast' | 'waiting' | 'bite' | 'reeling',
+    castCharge: 0.0,
+    bobberX: 0,
+    bobberY: 0,
+    bobberTargetX: 0,
+    bobberTargetY: 0,
+    waitingTimer: 0,
+    biteIndicatorTimer: 0,
+    minigame: {
+      fishProgress: 35, // starts at 35%
+      fishTargetPosition: 50,
+      fishSliderPosition: 50,
+      fishVelocity: 1.0,
+      fishAccelerationTimer: 0,
+      activeFishId: 'minnow',
+      activeFishSize: 'medium' as 'small' | 'medium' | 'large' | 'gigantic' | 'cosmic',
+      activeFishMutation: 'none' as 'none' | 'golden' | 'spicy' | 'radioactive' | 'albino' | 'double' | 'neon' | 'quantum' | 'crying' | 'magma' | 'gigantor' | 'aurora' | 'shadow'
+    }
+  };
+  public equippedFish: any[] = [];
   public loadingProgress: number = 0;
   public loadingAction: () => void = () => {};
   public loadingText: string = "LOADING FACILITY SECTOR...";
@@ -270,6 +298,28 @@ export class GameEngine {
         this.equippedCrops = [];
       }
 
+      const savedWeather = localStorage.getItem('sector7_weather');
+      if (savedWeather) {
+        this.weather = savedWeather as 'clear' | 'rain' | 'snow';
+      }
+
+      // LOAD FISHING STATE
+      const savedFishingRods = localStorage.getItem('sector7_fish_rods');
+      if (savedFishingRods) this.fishingState.unlockedRods = JSON.parse(savedFishingRods);
+      else this.fishingState.unlockedRods = ['rod_wooden'];
+
+      const savedActiveRod = localStorage.getItem('sector7_fish_active_rod');
+      if (savedActiveRod) this.fishingState.activeRod = savedActiveRod;
+      else this.fishingState.activeRod = 'rod_wooden';
+
+      const savedFishingInventory = localStorage.getItem('sector7_fish_inventory');
+      if (savedFishingInventory) this.fishingState.inventory = JSON.parse(savedFishingInventory);
+      else this.fishingState.inventory = [];
+
+      const savedEquippedFish = localStorage.getItem('sector7_eq_fish');
+      if (savedEquippedFish) this.equippedFish = JSON.parse(savedEquippedFish);
+      else this.equippedFish = [];
+
       // Default Unlocks if empty
       if (this.inventory.cosmetics.length === 0) {
         this.inventory.cosmetics = [];
@@ -365,6 +415,7 @@ export class GameEngine {
       else localStorage.removeItem('sector7_eq_pet');
 
       localStorage.setItem('sector7_eq_crops', JSON.stringify(this.equippedCrops));
+      localStorage.setItem('sector7_weather', this.weather);
 
       // SAVING FARMING STATE
       localStorage.setItem('sector7_farm_beds', JSON.stringify(this.farmingState.beds));
@@ -373,6 +424,12 @@ export class GameEngine {
       localStorage.setItem('sector7_farm_restock', this.farmingState.shopRestockTimer.toString());
       localStorage.setItem('sector7_farm_fertilizer', this.farmingState.fertilizerTimeRemaining.toString());
       localStorage.setItem('sector7_farm_last_save', Date.now().toString());
+
+      // SAVING FISHING STATE
+      localStorage.setItem('sector7_fish_rods', JSON.stringify(this.fishingState.unlockedRods));
+      localStorage.setItem('sector7_fish_active_rod', this.fishingState.activeRod);
+      localStorage.setItem('sector7_fish_inventory', JSON.stringify(this.fishingState.inventory));
+      localStorage.setItem('sector7_eq_fish', JSON.stringify(this.equippedFish));
     } catch (e) {
       console.warn("Saving failure", e);
     }
@@ -1995,6 +2052,19 @@ export class GameEngine {
       }
     }
 
+    if (this.gameMode === 'fishing') {
+      this.updateFishingRoom();
+      this.updatePlayerMovement();
+      this.updatePlasmaBullets();
+      this.updatePortalBullets();
+      this.updateHookshotPhysics();
+      this.updateRopesPhysics();
+      this.updateParticles();
+      this.updateFloatingTexts();
+      this.updatePets();
+      return;
+    }
+
     if (this.gameMode === 'farming') {
       this.updateFarmingRoom();
       this.updatePlayerMovement();
@@ -2076,7 +2146,58 @@ export class GameEngine {
       }
     }
 
-    if (this.gameMode === 'farming') {
+    if (this.gameMode === 'fishing') {
+      const onDock = p.x + p.width / 2 <= 260;
+
+      p.vy += this.world.gravity;
+      p.y += p.vy;
+
+      let landed = false;
+      if (onDock) {
+        const fY = 220; // Dock platform
+        if (p.vy >= 0 && (p.y + p.height - p.vy <= fY + 4.5) && (p.y + p.height >= fY - 4.5)) {
+          p.y = fY - p.height;
+          if (p.vy > 1.5) {
+            sound.playLand();
+            this.spawnDust(p.x + p.width / 2, fY, 2);
+          }
+          p.vy = 0;
+          p.onGround = true;
+          landed = true;
+        }
+      } else {
+        // Swimming in deep water! Water level at Y = 245
+        const waterY = 245;
+        if (p.y + p.height >= waterY) {
+          p.y = waterY - p.height;
+          p.vy = 0;
+          p.onGround = true;
+          landed = true;
+
+          // Water ambient bubbles/splash
+          if (Math.abs(p.vx) > 0.1 && Math.random() < 0.12) {
+            this.particles.push({
+              id: makeId(),
+              type: 'sparkle',
+              x: p.x + p.width / 2 + (Math.random() * 8 - 4),
+              y: waterY,
+              vx: Math.random() * 0.4 - 0.2,
+              vy: -Math.random() * 0.4 - 0.2,
+              color: 'rgba(54, 229, 240, 0.6)',
+              size: Math.random() * 1.8 + 1,
+              life: 0.7,
+              decay: 0.05,
+              angle: 0,
+              angularVelocity: 0
+            });
+          }
+        }
+      }
+      
+      if (!landed) {
+        p.onGround = false;
+      }
+    } else if (this.gameMode === 'farming') {
       const onLadder = Math.abs((p.x + p.width/2) - 320) < 15;
       
       if (!onLadder) {
@@ -2154,6 +2275,17 @@ export class GameEngine {
         }
         p.vy = 0;
         p.onGround = true;
+      }
+    }
+
+    if (this.gameMode === 'fishing') {
+      if (p.y + p.height > 220 + 2) {
+        if (p.x < 260) {
+          p.x = 260;
+          if (p.vx < 0) {
+            p.vx = 0;
+          }
+        }
       }
     }
 
@@ -2481,6 +2613,473 @@ export class GameEngine {
     sound.playUnlock();
     this.spawnFloatingText(`SOLD ALL: +${totalCoins} COINS & +${totalGems} GEMS! 💰`, this.player.x + 12, this.player.y - 18, "#ffe385");
     this.saveProfileToStorage();
+  }
+
+  // --- DEDICATED FISHING ROOM ENGINE CORE ROUTINES ---
+
+  public setFishingMode() {
+    this.gameMode = 'fishing';
+    this.ropes = [];
+    this.toolgunSelected = null;
+    this.boxes = [];
+    this.lootItems = [];
+    this.particles = [];
+    this.floatingTexts = [];
+
+    // Start on the pier dock platform at X=150, Y=220
+    this.player.x = 150;
+    this.player.y = 220 - this.player.height;
+    this.player.vx = 0;
+    this.player.vy = 0;
+    this.player.grabbingBox = null;
+
+    this.fishingState.castState = 'idle';
+    this.fishingState.castCharge = 0.0;
+
+    this.spawnFloatingText("FISHING LAGOON COVE ENTERED! 🌊🎣", 320, 140, "#36e5f0");
+    sound.playBubble();
+    this.saveProfileToStorage();
+  }
+
+  public purchaseFishingRod(rodId: string): boolean {
+    const rod = RODS_LIST.find(r => r.id === rodId);
+    if (!rod) return false;
+
+    if (this.fishingState.unlockedRods.includes(rodId)) {
+      this.fishingState.activeRod = rodId;
+      this.currentTool = rodId;
+      sound.playTick();
+      this.spawnFloatingText(`EQUIPPED: ${rod.name.toUpperCase()} 🎣`, this.player.x + 12, this.player.y - 12, "#36e5f0");
+      this.saveProfileToStorage();
+      return true;
+    }
+
+    if (this.coins >= rod.cost && this.gems >= rod.gemsCost) {
+      this.coins -= rod.cost;
+      this.gems -= rod.gemsCost;
+      this.fishingState.unlockedRods.push(rodId);
+      this.fishingState.activeRod = rodId;
+
+      if (!this.inventory.tools.includes(rodId)) {
+        this.inventory.tools.push(rodId);
+      }
+      this.currentTool = rodId;
+
+      sound.playUnlock();
+      this.spawnFloatingText(`PURCHASED ${rod.name.toUpperCase()} ROD! 🎣`, this.player.x + 12, this.player.y - 12, "#73ef7d");
+      this.saveProfileToStorage();
+      return true;
+    } else {
+      sound.playLand();
+      this.spawnFloatingText("NOT ENOUGH FUNDS!", this.player.x + 12, this.player.y - 12, "#ff4500");
+      return false;
+    }
+  }
+
+  public sellFishStack(fishId: string, mutation: string, size: string): boolean {
+    const idx = this.fishingState.inventory.findIndex(
+      x => x.fishId === fishId && x.mutation === mutation && x.size === size
+    );
+    if (idx === -1) return false;
+
+    const stack = this.fishingState.inventory[idx];
+    const fType = FISH_TYPES.find(x => x.id === fishId);
+    if (!fType) return false;
+
+    const activeRodConf = RODS_LIST.find(r => r.id === this.fishingState.activeRod) || RODS_LIST[0];
+    const payout = getFishSellValue(stack.fishId, stack.size, stack.mutation, activeRodConf.payoutMultiplier);
+    const payoutCoins = payout.coins * stack.count;
+    const payoutGems = payout.gems * stack.count;
+
+    this.coins += payoutCoins;
+    this.gems += payoutGems;
+    const gemStr = payoutGems > 0 ? ` & +${payoutGems}G` : '';
+    this.spawnFloatingText(`SOLD STACK: +${payoutCoins}C${gemStr}!`, this.player.x + 12, this.player.y - 12, "#73ef7d");
+    sound.playUnlock();
+
+    this.fishingState.inventory.splice(idx, 1);
+    this.saveProfileToStorage();
+    return true;
+  }
+
+  public sellAllFish(): boolean {
+    let totalCoins = 0;
+    let totalGems = 0;
+    let itemsSold = 0;
+
+    const activeRodConf = RODS_LIST.find(r => r.id === this.fishingState.activeRod) || RODS_LIST[0];
+
+    for (const stack of this.fishingState.inventory) {
+      const payout = getFishSellValue(stack.fishId, stack.size, stack.mutation, activeRodConf.payoutMultiplier);
+      totalCoins += payout.coins * stack.count;
+      totalGems += payout.gems * stack.count;
+      itemsSold += stack.count;
+    }
+
+    if (itemsSold === 0) {
+      return false;
+    }
+
+    this.coins += totalCoins;
+    this.gems += totalGems;
+    this.fishingState.inventory = [];
+
+    this.saveProfileToStorage();
+    return true;
+  }
+
+  public toggleEquipFish(fishId: string, size: any, mutation: any) {
+    const idx = this.equippedFish.findIndex(x => x.fishId === fishId && x.size === size && x.mutation === mutation);
+    if (idx !== -1) {
+      this.equippedFish.splice(idx, 1);
+    } else {
+      if (this.equippedFish.length >= 3) {
+        this.equippedFish.shift();
+      }
+      this.equippedFish.push({ fishId, size, mutation });
+    }
+    this.saveProfileToStorage();
+    sound.playTick();
+  }
+
+  public pressCastAction() {
+    if (!this.currentTool || !this.currentTool.startsWith('rod_')) return;
+
+    if (this.fishingState.castState === 'idle') {
+      this.fishingState.castState = 'charging';
+      this.fishingState.castCharge = 0.0;
+      sound.playTone(200, 350, 0.1, "sine", 0.4);
+    } else if (this.fishingState.castState === 'reeling') {
+      // Inputs handles shifting slider so no action needed on press itself
+    }
+  }
+
+  public releaseCastAction() {
+    if (!this.currentTool || !this.currentTool.startsWith('rod_')) return;
+
+    if (this.fishingState.castState === 'charging') {
+      const charge = this.fishingState.castCharge;
+      const facingSign = this.player.facing === 'left' ? -1 : 1;
+      
+      this.fishingState.bobberX = this.player.x + 12;
+      this.fishingState.bobberY = this.player.y + 12;
+      
+      const travelDist = 60 + charge * 240;
+      // Landing point should be inside the water region X > 260! We clip it gently to ensure it always lands in the cove lake!
+      // If player is on the left side, they can easily launch past 260. If they stand near the water, they can cast even deeper.
+      let targetX = this.player.x + 12 + facingSign * travelDist;
+      this.fishingState.bobberTargetX = Math.min(this.world.width - 25, Math.max(275, targetX));
+      this.fishingState.bobberTargetY = 245; // cove water surface height level
+
+      this.fishingState.castState = 'cast';
+      sound.playTone(320, 580, 0.12, "sine", 0.45);
+    } else if (this.fishingState.castState === 'waiting') {
+      // Early reel retraction
+      this.fishingState.castState = 'idle';
+      this.spawnFloatingText("REEL RETRACTED!", this.player.x + 12, this.player.y - 12, "#cccccc");
+      sound.playTone(300, 180, 0.1, "sine", 0.2);
+    } else if (this.fishingState.castState === 'bite') {
+      // Reeled in time! Trigger the active reeling minigame!
+      sound.playTone(400, 600, 0.1, "sine", 0.5);
+      
+      // Roll for a fish!
+      // 1. Choose from FISH_TYPES based on rarities, rod stats, and weather
+      const rodConf = RODS_LIST.find(r => r.id === this.fishingState.activeRod) || RODS_LIST[0];
+      const weatherLuckFactor = this.weather === 'rain' ? 1.25 : (this.weather === 'snow' ? 1.45 : 1.0);
+      const effectiveLuck = rodConf.luckMultiplier * weatherLuckFactor;
+
+      const rollRarity = Math.random() < effectiveLuck * 0.15 ? 'legendary' : 
+                         Math.random() < effectiveLuck * 0.28 ? 'rare' : 'common';
+      
+      let applicable = FISH_TYPES.filter(f => f.rarity === rollRarity);
+      if (applicable.length === 0) applicable = FISH_TYPES;
+      const rolledFish = applicable[Math.floor(Math.random() * applicable.length)];
+
+      // 2. Roll size
+      let sizeRoll = Math.random() * 100;
+      let rolledSize: 'small' | 'medium' | 'large' | 'gigantic' | 'cosmic' = 'medium';
+      if (this.weather === 'snow') {
+        // Snow significantly improves likelihood of pulling gigantic/cosmic species!
+        if (sizeRoll < 5) rolledSize = 'small';
+        else if (sizeRoll < 35) rolledSize = 'medium';
+        else if (sizeRoll < 68) rolledSize = 'large';
+        else if (sizeRoll < 88) rolledSize = 'gigantic';
+        else rolledSize = 'cosmic';
+      } else {
+        if (sizeRoll < 12) rolledSize = 'small';
+        else if (sizeRoll < 55) rolledSize = 'medium';
+        else if (sizeRoll < 85) rolledSize = 'large';
+        else if (sizeRoll < 96) rolledSize = 'gigantic';
+        else rolledSize = 'cosmic';
+      }
+
+      // 3. Roll mutations based on rod booster luck and weather
+      let rolledMutation: any = 'none';
+      if (Math.random() < 0.16 * effectiveLuck) {
+        let rolledMutObj = FISH_MUTATIONS[1 + Math.floor(Math.random() * (FISH_MUTATIONS.length - 1))];
+        if (rolledMutObj) rolledMutation = rolledMutObj.id;
+      }
+
+      const mg = this.fishingState.minigame;
+      mg.fishProgress = 35; // starts at 35%
+      mg.fishTargetPosition = 30 + Math.random() * 40;
+      mg.fishSliderPosition = 50;
+      mg.fishVelocity = (Math.random() - 0.5) * rolledFish.behavior.speed * 4.2;
+      mg.fishAccelerationTimer = 30;
+      mg.activeFishId = rolledFish.id;
+      mg.activeFishSize = rolledSize;
+      mg.activeFishMutation = rolledMutation;
+
+      this.fishingState.castState = 'reeling';
+    }
+  }
+
+  private updateFishingRoom() {
+    const dt = 1 / 60;
+    const fs = this.fishingState;
+    const p = this.player;
+
+    const activeRodConf = RODS_LIST.find(r => r.id === fs.activeRod) || RODS_LIST[0];
+
+    // 1. Tick charging state
+    if (fs.castState === 'charging') {
+      fs.castCharge += dt * 1.5; // reaches 1.0 in ~0.66 seconds
+      if (fs.castCharge >= 1.0) {
+        fs.castCharge = 0.0; // wrap
+      }
+      
+      if (Math.random() < 0.25) {
+        this.particles.push({
+          id: makeId(),
+          type: 'sparkle',
+          x: p.x + 12 + (p.facing === 'left' ? -8 : 8),
+          y: p.y + 12,
+          vx: Math.random() * 0.4 - 0.2,
+          vy: -Math.random() * 0.4 - 0.2,
+          color: '#36e5f0',
+          size: 1.5,
+          life: 0.8,
+          decay: 0.1,
+          angle: 0,
+          angularVelocity: 0
+        });
+      }
+    }
+
+    // 2. Trajectory of flying bobber
+    if (fs.castState === 'cast') {
+      const dx = fs.bobberTargetX - fs.bobberX;
+      const dy = fs.bobberTargetY - fs.bobberY;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist < 5) {
+        fs.bobberX = fs.bobberTargetX;
+        fs.bobberY = fs.bobberTargetY;
+        fs.castState = 'waiting';
+        const weatherBiteFactor = this.weather === 'rain' ? 0.52 : (this.weather === 'snow' ? 1.5 : 1.0);
+        fs.waitingTimer = (2.0 + Math.random() * 3.5) * weatherBiteFactor; // wait 2-5.5 seconds multiplied by weather bite factor
+        
+        sound.playTone(180, 80, 0.15, "sine", 0.4, true);
+        for (let i = 0; i < 6; i++) {
+          this.particles.push({
+            id: makeId(),
+            type: 'sparkle',
+            x: fs.bobberX,
+            y: fs.bobberY,
+            vx: Math.random() * 1.5 - 0.75,
+            vy: -Math.random() * 1.5 - 1.0,
+            color: '#3ddebd',
+            size: Math.random() * 2.2 + 1.2,
+            life: 1.0,
+            decay: 0.04,
+            angle: 0,
+            angularVelocity: 0
+          });
+        }
+      } else {
+        fs.bobberX += dx * 0.12;
+        fs.bobberY += dy * 0.12;
+        
+        const totalDist = Math.abs(fs.bobberTargetX - (p.x + 12));
+        const currentProgress = 1 - (dist / totalDist || 0); // 0 to 1
+        const arcY = -40 * Math.sin(currentProgress * Math.PI);
+        fs.bobberY += arcY * 0.08;
+      }
+    }
+
+    // 3. Waiting float
+    if (fs.castState === 'waiting') {
+      fs.bobberY = 245 + Math.sin(Date.now() * 0.01) * 1.5;
+      fs.waitingTimer -= dt;
+
+      if (Math.random() < 0.07) {
+        this.particles.push({
+          id: makeId(),
+          type: 'smoke',
+          x: fs.bobberX,
+          y: fs.bobberY + 2,
+          vx: 0,
+          vy: 0,
+          color: 'rgba(54, 229, 240, 0.25)',
+          size: Math.random() * 2.5 + 1.0,
+          life: 0.6,
+          decay: 0.04,
+          angle: 0,
+          angularVelocity: 0
+        });
+      }
+
+      if (fs.waitingTimer <= 0) {
+        fs.castState = 'bite';
+        fs.biteIndicatorTimer = 85; // 85 frames to click (approx 1.4 seconds)
+        sound.playTone(880, 1100, 0.14, "sine", 0.6);
+        this.spawnFloatingText("BITE! ⚡🎣", fs.bobberX, fs.bobberY - 20, "#ff4500");
+        
+        for (let i = 0; i < 8; i++) {
+          this.particles.push({
+            id: makeId(),
+            type: 'sparkle',
+            x: fs.bobberX,
+            y: fs.bobberY,
+            vx: Math.random() * 1.2 - 0.6,
+            vy: -Math.random() * 2.0 - 1.0,
+            color: '#ffcd75',
+            size: Math.random() * 1.8 + 1.0,
+            life: 0.9,
+            decay: 0.04,
+            angle: 0,
+            angularVelocity: 0
+          });
+        }
+      }
+    }
+
+    // 4. Bite reaction timing out
+    if (fs.castState === 'bite') {
+      fs.bobberY = 246 + Math.sin(Date.now() * 0.05) * 2.5; // shake bobber
+      fs.biteIndicatorTimer--;
+      
+      if (fs.biteIndicatorTimer <= 0) {
+        fs.castState = 'idle';
+        this.spawnFloatingText("THE FISH ESCAPED... 💨", p.x + 12, p.y - 12, "#ff4500");
+        sound.playTone(160, 120, 0.25, "triangle", 0.5);
+      }
+    }
+
+    // 5. Minigame ticker
+    if (fs.castState === 'reeling') {
+      const mg = fs.minigame;
+      const fishType = FISH_TYPES.find(f => f.id === mg.activeFishId) || FISH_TYPES[0];
+
+      mg.fishAccelerationTimer--;
+      if (mg.fishAccelerationTimer <= 0) {
+        mg.fishAccelerationTimer = 45 + Math.floor(Math.random() * 70); // next shift 45-115 frames
+        mg.fishVelocity = (Math.random() - 0.5) * fishType.behavior.speed * 4.2;
+      }
+
+      // Handle Rod Quantum Assist automatic pulling towards the target
+      if (fs.activeRod === 'rod_quantum') {
+        const driftForce = 0.32;
+        if (mg.fishSliderPosition < mg.fishTargetPosition - 5) {
+          mg.fishSliderPosition += driftForce;
+        } else if (mg.fishSliderPosition > mg.fishTargetPosition + 5) {
+          mg.fishSliderPosition -= driftForce;
+        }
+      }
+
+      // Slide player bar depending on keys/clicks
+      if (this.inputs.up || this.inputs.right) {
+        mg.fishSliderPosition += 2.1;
+      } else {
+        mg.fishSliderPosition -= 1.8;
+      }
+
+      mg.fishSliderPosition = Math.max(5, Math.min(95, mg.fishSliderPosition));
+
+      mg.fishTargetPosition += mg.fishVelocity;
+      if (mg.fishTargetPosition <= 5 || mg.fishTargetPosition >= 95) {
+        mg.fishVelocity = -mg.fishVelocity;
+        mg.fishTargetPosition = Math.max(5, Math.min(95, mg.fishTargetPosition));
+      }
+
+      const barHalf = 10 * activeRodConf.barMultiplier; // e.g. base width is 20
+      const inZone = Math.abs(mg.fishSliderPosition - mg.fishTargetPosition) <= barHalf;
+
+      if (inZone) {
+        const weatherProgressFactor = this.weather === 'rain' ? 1.25 : (this.weather === 'snow' ? 0.75 : 1.0);
+        mg.fishProgress += 0.48 * activeRodConf.reelingMultiplier * weatherProgressFactor;
+        
+        if (Math.random() < 0.28) {
+          this.particles.push({
+            id: makeId(),
+            type: 'sparkle',
+            x: p.x + 12,
+            y: p.y - 18 + Math.random() * 8,
+            vx: Math.random() * 0.8 - 0.4,
+            vy: -Math.random() * 0.6 - 0.3,
+            color: '#73ef7d',
+            size: 1.5,
+            life: 0.8,
+            decay: 0.05,
+            angle: 0,
+            angularVelocity: 0
+          });
+        }
+      } else {
+        mg.fishProgress -= 0.28;
+      }
+
+      mg.fishProgress = Math.max(0, Math.min(100, mg.fishProgress));
+
+      if (mg.fishProgress >= 100) {
+        fs.castState = 'idle';
+        
+        const exist = fs.inventory.find(x => x.fishId === mg.activeFishId && x.size === mg.activeFishSize && x.mutation === mg.activeFishMutation);
+        if (exist) {
+          exist.count++;
+        } else {
+          fs.inventory.push({
+            fishId: mg.activeFishId,
+            size: mg.activeFishSize,
+            mutation: mg.activeFishMutation,
+            count: 1
+          });
+        }
+
+        let fishNameLabel = fishType.name;
+        const mutConf = FISH_MUTATIONS.find(m => m.id === mg.activeFishMutation);
+        if (mutConf && mutConf.id !== 'none') {
+          fishNameLabel = `${mutConf.label} ${fishNameLabel}`;
+        }
+        
+        const floatVal = `${mg.activeFishSize.toUpperCase()} ${fishNameLabel.toUpperCase()}! 🏆🎣`;
+        this.spawnFloatingText(`CAUGHT: ${floatVal}`, p.x + 12, p.y - 20, mutConf && mutConf.id !== 'none' ? mutConf.color : '#36e5f0');
+        sound.playUnlock();
+
+        for (let i = 0; i < 14; i++) {
+          this.particles.push({
+            id: makeId(),
+            type: 'sparkle',
+            x: p.x + 12,
+            y: p.y + 12,
+            vx: Math.random() * 2.5 - 1.25,
+            vy: -Math.random() * 2.5 - 0.5,
+            color: mutConf && mutConf.id !== 'none' ? mutConf.color : '#36e5f0',
+            size: Math.random() * 2.2 + 1.2,
+            life: 1.0,
+            decay: 0.03,
+            angle: 0,
+            angularVelocity: 0
+          });
+        }
+
+        this.saveProfileToStorage();
+      } else if (mg.fishProgress <= 0) {
+        fs.castState = 'idle';
+        this.spawnFloatingText("THE FISH FLEEING ESCAPED! 💨🌊", p.x + 12, p.y - 12, "#ff4500");
+        sound.playSplat();
+      }
+    }
   }
 
   private updateCratesPhysics() {

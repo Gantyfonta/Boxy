@@ -4,6 +4,7 @@ import { sprites } from './game/sprites';
 import { sound } from './game/sound';
 import { BoxType } from './game/types';
 import { CROP_TYPES, CROP_SIZES, CROP_MUTATIONS, FarmPlantBed } from './game/farming';
+import { FISH_TYPES, RODS_LIST, FISH_MUTATIONS } from './game/fishing';
 
 const makeId = () => Math.random().toString(36).substring(2, 11);
 
@@ -56,6 +57,8 @@ const resizeCanvas = () => {
 // Menus Visibility States
 let isShopOpen = false;
 let isClosetOpen = false;
+let isDaveShopOpen = false;
+let isMouseDownHeld = false;
 
 // Controller movement keys tracking
 const keys: { [key: string]: boolean } = {};
@@ -95,6 +98,11 @@ const handleKeyDown = (e: KeyboardEvent) => {
       sound.playTick();
       return;
     }
+    if (engine.gameMode === 'fishing') {
+      engine.setLobbyMode();
+      sound.playTick();
+      return;
+    }
     if (engine.gameMode === 'farming') {
       if (engine.farmingState.isDeporcusOpen) {
         engine.farmingState.isDeporcusOpen = false;
@@ -116,10 +124,11 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
 
   // Double tap ignore check for active lobby menus
-  if (isShopOpen || isClosetOpen) {
-    if (code === 'KeyE') {
+  if (isShopOpen || isClosetOpen || isDaveShopOpen) {
+    if (code === 'KeyE' || code === 'Escape') {
       isShopOpen = false;
       isClosetOpen = false;
+      isDaveShopOpen = false;
       sound.playTick();
     }
     return;
@@ -127,6 +136,18 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
   // Interactivity single tap check
   if (code === 'KeyE') {
+    // 🎣 Interaction check inside Fishing mode
+    if (engine.gameMode === 'fishing') {
+      const px = engine.player.x + 12;
+      const py = engine.player.y + 16;
+      const distDave = Math.abs(px - 90);
+      if (distDave < 64 && py > 180) {
+        isDaveShopOpen = !isDaveShopOpen;
+        sound.playUnlock();
+        return;
+      }
+    }
+
     // 🐖 Proximity checks inside Farming mode
     if (engine.gameMode === 'farming') {
       const px = engine.player.x + 12;
@@ -217,6 +238,13 @@ const handleKeyDown = (e: KeyboardEvent) => {
         sound.playUnlock();
         return;
       }
+
+      // 6. Fishing Lagoon Cove Portal (X = 530)
+      if (Math.abs(px - 530) < 24) {
+        engine.setFishingMode();
+        sound.playUnlock();
+        return;
+      }
     }
 
     // Default: try lift physical crate. If none closer than 45px, toggle Closet Inventory!
@@ -299,6 +327,7 @@ const getVirtualMouseCoords = (clientX: number, clientY: number) => {
 };
 
 const handleMouseDown = (e: MouseEvent) => {
+  isMouseDownHeld = true;
   if (!initClick) {
     initClick = true;
     sound.playTick();
@@ -307,6 +336,11 @@ const handleMouseDown = (e: MouseEvent) => {
   const { mx, my } = getVirtualMouseCoords(e.clientX, e.clientY);
 
   // IF OVERLAY WINDOW IS ACTIVE, INTERCEPT CLICK COORDINATES ONLY
+  if (isDaveShopOpen) {
+    handleDaveShopClicks(mx, my);
+    return;
+  }
+
   if (isShopOpen) {
     handleShopClicks(mx, my);
     return;
@@ -317,10 +351,26 @@ const handleMouseDown = (e: MouseEvent) => {
     return;
   }
 
-  // 🔊 Audio mute slider click check (Top-Left)
-  if (mx >= 12 && mx <= 70 && my >= 10 && my <= 26) {
+  // 🔊 Audio mute slider click check (Supports old top-left coordinate range OR new centered visual sound button)
+  if ((mx >= 12 && mx <= 70 && my >= 10 && my <= 26) || (mx >= 250 && mx <= 314 && my >= 9 && my <= 23)) {
     sound.enabled = !sound.enabled;
     sound.playTick();
+    return;
+  }
+
+  // 🌧️ Weather toggle click check
+  if (mx >= 326 && mx <= 390 && my >= 9 && my <= 23) {
+    const current = engine.weather;
+    if (current === 'clear') {
+      engine.weather = 'rain';
+    } else if (current === 'rain') {
+      engine.weather = 'snow';
+    } else {
+      engine.weather = 'clear';
+    }
+    engine.saveProfileToStorage();
+    sound.playTick();
+    engine.spawnFloatingText(`WEATHER SET TO ${engine.weather.toUpperCase()}!`, 320, 50, "#ffcd75");
     return;
   }
 
@@ -411,6 +461,11 @@ const handleMouseDown = (e: MouseEvent) => {
       engine.startNewRun();
       return;
     }
+    // fishing gate is at 530
+    if (Math.abs(mx - 530) < 25 && my > height - 80) {
+      engine.setFishingMode();
+      return;
+    }
     // farm gate is at 580
     if (Math.abs(mx - 580) < 25 && my > height - 80) {
       engine.setFarmingMode();
@@ -435,6 +490,32 @@ const handleMouseDown = (e: MouseEvent) => {
       sound.playUnlock();
       return;
     }
+  }
+
+  // --- FISHING ZONE INTERACTIONS ---
+  if (engine.gameMode === 'fishing') {
+    // 1. Check click Fisherman Dave (X = 90, pier ground height)
+    const distDave = Math.abs(mx - 90);
+    if (distDave < 32 && my > 170) {
+      const px = engine.player.x + 12;
+      const py = engine.player.y + 16;
+      if (Math.abs(px - 90) < 64 && py > 180) {
+        isDaveShopOpen = !isDaveShopOpen;
+        sound.playUnlock();
+        return;
+      }
+    }
+
+    // 2. Check return menu top right button
+    if (mx >= 540 && mx <= 628 && my >= 4 && my <= 28) {
+      engine.setLobbyMode();
+      sound.playTick();
+      return;
+    }
+
+    // 3. Otherwise, trigger cast charging/reeling action!
+    engine.pressCastAction();
+    return;
   }
 
   // Portal Gun Laser Projectiles (Left click = orange, Right click = blue!)
@@ -731,6 +812,10 @@ const handleMouseMove = (e: MouseEvent) => {
 };
 
 const handleMouseUp = () => {
+  isMouseDownHeld = false;
+  if (engine.gameMode === 'fishing') {
+    engine.releaseCastAction();
+  }
   engine.handleMouseUp();
   engine.releaseHookshot();
 };
@@ -743,10 +828,26 @@ const handleTouchStart = (e: TouchEvent) => {
   if (e.touches[0]) {
     const { mx, my } = getVirtualMouseCoords(e.touches[0].clientX, e.touches[0].clientY);
     
-    // Quick audio block click check
-    if (mx >= 12 && mx <= 70 && my >= 10 && my <= 26) {
+    // Quick audio block click check (Supports old top-left coordinate range OR new centered visual sound button)
+    if ((mx >= 12 && mx <= 70 && my >= 10 && my <= 26) || (mx >= 250 && mx <= 314 && my >= 9 && my <= 23)) {
       sound.enabled = !sound.enabled;
       sound.playTick();
+      return;
+    }
+
+    // Quick weather block click check
+    if (mx >= 326 && mx <= 390 && my >= 9 && my <= 23) {
+      const current = engine.weather;
+      if (current === 'clear') {
+        engine.weather = 'rain';
+      } else if (current === 'rain') {
+        engine.weather = 'snow';
+      } else {
+        engine.weather = 'clear';
+      }
+      engine.saveProfileToStorage();
+      sound.playTick();
+      engine.spawnFloatingText(`WEATHER SET TO ${engine.weather.toUpperCase()}!`, 320, 50, "#ffcd75");
       return;
     }
 
@@ -863,6 +964,23 @@ const drawInteractiveSectorDecorations = (w: number, h: number) => {
     ctx.font = 'bold 5.5px monospace';
     ctx.fillStyle = '#ffcd75';
     ctx.fillText("CLOSET", closetX, groundY - 32);
+
+    // 2.5 FISHING PORTAL (X = 530)
+    const fishX = 530;
+    // Glowing sea-blue/cyan outline
+    ctx.strokeStyle = '#36e5f0';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(fishX - 16, groundY - 42, 32, 42);
+    ctx.fillStyle = 'rgba(54, 229, 240, 0.18)';
+    ctx.fillRect(fishX - 16, groundY - 42, 32, 42);
+
+    // Ripple glowing pulse line
+    ctx.fillStyle = '#36e5f0';
+    ctx.fillRect(fishX - 13 + Math.floor(Date.now() / 150) % 22, groundY - 40, 2, 40);
+
+    ctx.font = 'bold 6.5px monospace';
+    ctx.fillStyle = '#36e5f0';
+    ctx.fillText("FISH PORTAL", fishX, groundY - 46);
 
     // 3. RUN PORTAL
     const runX = 480;
@@ -1226,6 +1344,676 @@ const drawFarmingRoomBeds = (w: number, h: number) => {
         }
       }
     }
+  }
+};
+
+// Render stylized animated vector fish on canvas
+const drawStylizedFishVector = (ctx: CanvasRenderingContext2D, x: number, y: number, sz: number, baseColor: string, mutation: string) => {
+  ctx.save();
+  ctx.translate(x + sz / 2, y + sz / 2);
+  
+  // Oscillate tail fin slightly
+  const tailOsc = Math.sin(Date.now() * 0.012) * 0.25;
+
+  let color = baseColor;
+  const mutConf = FISH_MUTATIONS.find(m => m.id === mutation);
+  if (mutConf && mutConf.id !== 'none') {
+    color = mutConf.color;
+  }
+
+  ctx.fillStyle = color;
+  ctx.strokeStyle = '#10121c';
+  ctx.lineWidth = 0.8;
+
+  // Fish body: beautiful horizontal ellipse
+  ctx.beginPath();
+  ctx.ellipse(0, 0, sz / 2, sz / 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Tail fin
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(-sz / 2, 0);
+  ctx.lineTo(-sz * 0.8, -sz / 4 + tailOsc * 4);
+  ctx.lineTo(-sz * 0.8, sz / 4 + tailOsc * 4);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Eye
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(sz / 3, -sz / 10, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.arc(sz / 3, -sz / 10, 0.8, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+};
+
+const swatchHelp = (idx: number) => {
+  return idx % 2 === 0 ? 8 : -8;
+};
+
+// Render Fishing Lagoons backdrop scenery
+const drawFishingLagoonsBackground = (w: number, h: number) => {
+  const groundY = 220;
+
+  // Sky to sea ocean dark depth gradient
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
+  skyGrad.addColorStop(0, '#0a101d');
+  skyGrad.addColorStop(0.35, '#0b1b3d');
+  skyGrad.addColorStop(0.65, '#0d2d4d');
+  skyGrad.addColorStop(1.0, '#050a14');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  // Distant glowing cyan sea-fog clouds
+  ctx.fillStyle = 'rgba(54, 229, 240, 0.08)';
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.ellipse(80 + i * 160, 40 + Math.sin(Date.now() * 0.0004 + i) * 15, 60, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Draw twinkling night stars
+  for (let i = 0; i < 18; i++) {
+    const starX = (i * 37 + 13) % w;
+    const starY = (i * 23 + 29) % 180;
+    const twinkle = 0.3 + 0.7 * Math.abs(Math.sin(Date.now() * 0.0012 + i));
+    ctx.fillStyle = `rgba(255, 255, 255, ${twinkle})`;
+    ctx.fillRect(starX, starY, starY % 2 === 0 ? 1 : 1.5, starY % 2 === 0 ? 1 : 1.5);
+  }
+
+  // Draw Translucent Water Basin for X >= 0 (Underneath everything, including the pier and support posts)
+  const waterGrad = ctx.createLinearGradient(0, 245, w, h);
+  waterGrad.addColorStop(0, 'rgba(54, 229, 240, 0.42)');
+  waterGrad.addColorStop(0.15, 'rgba(13, 71, 110, 0.88)');
+  waterGrad.addColorStop(1.0, 'rgba(3, 17, 36, 0.98)');
+  ctx.fillStyle = waterGrad;
+  ctx.fillRect(0, 245, w, h - 245);
+
+  // Draw micro ocean ripples surface outlines starting from 0
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    const waveShift = (Date.now() * 0.02 + i * 110) % w;
+    ctx.beginPath();
+    ctx.moveTo(waveShift, 245);
+    ctx.lineTo(Math.min(w, waveShift + 45), 245);
+    ctx.stroke();
+  }
+
+  // Draw structural wood piles/gullies (drawn on top of the water!)
+  const supportPiles = [30, 90, 150, 210, 250];
+  ctx.fillStyle = '#1e1c18';
+  ctx.strokeStyle = '#100f0d';
+  ctx.lineWidth = 1;
+  for (const xp of supportPiles) {
+    ctx.fillRect(xp - 5, groundY, 10, h - groundY);
+    ctx.strokeRect(xp - 5, groundY, 10, h - groundY);
+  }
+
+  // Draw Wood pier deck (drawn on top of both posts and water!)
+  ctx.fillStyle = '#3a342b';
+  ctx.fillRect(0, groundY, 260, 8);
+  ctx.strokeStyle = '#201b15';
+  ctx.strokeRect(0, groundY, 260, 8);
+
+  // Draw planks horizontal division bars
+  ctx.strokeStyle = '#201b15';
+  ctx.lineWidth = 0.8;
+  for (let xOff = 12; xOff < 260; xOff += 14) {
+    ctx.beginPath();
+    ctx.moveTo(xOff, groundY);
+    ctx.lineTo(xOff, groundY + 8);
+    ctx.stroke();
+  }
+
+  // Draw underwater kelps swaying gently
+  ctx.fillStyle = '#1c7653';
+  ctx.strokeStyle = '#124c35';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i < 6; i++) {
+    const plantX = 290 + i * 55;
+    const sway = Math.sin(Date.now() * 0.0016 + i) * 6;
+    ctx.beginPath();
+    ctx.moveTo(plantX, h);
+    ctx.bezierCurveTo(plantX - 6 + sway, h - 15, plantX + swatchHelp(i) + sway, h - 30, plantX + sway, h - 45);
+    ctx.quadraticCurveTo(plantX - 4 + sway, h - 20, plantX, h);
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // Fisherman Dave Standing at X = 90
+  const daveX = 90;
+  const daveY = groundY - 32;
+  const daveBob = Math.sin(Date.now() * 0.002) * 0.8;
+
+  // Body draw
+  ctx.fillStyle = '#ffd13b';
+  ctx.fillRect(daveX - 8, daveY + 11 + daveBob, 16, 21 - daveBob);
+  ctx.strokeStyle = '#a6850c';
+  ctx.strokeRect(daveX - 8, daveY + 11 + daveBob, 16, 21 - daveBob);
+
+  // Head
+  ctx.fillStyle = '#ffd5bd';
+  ctx.beginPath();
+  ctx.arc(daveX, daveY + 6 + daveBob, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // White old beard
+  ctx.fillStyle = '#f3f4f6';
+  ctx.beginPath();
+  ctx.moveTo(daveX - 4, daveY + 8 + daveBob);
+  ctx.lineTo(daveX + 4, daveY + 8 + daveBob);
+  ctx.lineTo(daveX, daveY + 14 + daveBob);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cap
+  ctx.fillStyle = '#1d3557';
+  ctx.fillRect(daveX - 6, daveY + daveBob, 12, 3);
+  ctx.fillStyle = '#f1faee';
+  ctx.fillRect(daveX - 4, daveY + 3 + daveBob, 8, 2);
+
+  // Nameboard
+  ctx.fillStyle = 'rgba(16, 20, 31, 0.72)';
+  ctx.fillRect(daveX - 40, daveY - 14, 80, 10);
+  ctx.strokeStyle = '#36e5f0';
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(daveX - 40, daveY - 14, 80, 10);
+
+  ctx.fillStyle = '#ffd5bd';
+  ctx.font = 'bold 5.0px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText("OLD MARINER DAVE 👴", daveX, daveY - 7);
+};
+
+// Render casting line & bobber
+const drawFishingLagoonsBobberAndPole = (w: number, h: number) => {
+  const fs = engine.fishingState;
+  const p = engine.player;
+
+  if (fs.castState === 'idle') return;
+
+  // Left hand or right hand based on facing direction
+  const handX = p.x + (p.facing === 'left' ? -2 : 24);
+  const handY = p.y + 11;
+
+  const activeRodConf = RODS_LIST.find(r => r.id === fs.activeRod) || RODS_LIST[0];
+  const rodColor = activeRodConf.color;
+
+  ctx.save();
+  ctx.strokeStyle = rodColor;
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+
+  const rodAngle = p.facing === 'left' ? -Math.PI * 0.85 : -Math.PI * 0.15;
+  const tipX = handX + Math.cos(rodAngle) * 24;
+  const tipY = handY + Math.sin(rodAngle) * 24;
+
+  ctx.beginPath();
+  ctx.moveTo(handX, handY);
+  ctx.lineTo(tipX, tipY);
+  ctx.stroke();
+  ctx.restore();
+
+  // Render the casting bar progress when charging!
+  if (fs.castState === 'charging') {
+    const chargePct = fs.castCharge;
+    const barW = 32;
+    const barH = 5;
+    const barX = p.x - 4;
+    const barY = p.y - 12;
+
+    ctx.fillStyle = '#10121c';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#36e5f0';
+    ctx.fillRect(barX + 1, barY + 1, (barW - 2) * chargePct, barH - 2);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 0.6;
+    ctx.strokeRect(barX, barY, barW, barH);
+  }
+
+  // Draw casting line
+  if (fs.castState !== 'charging') {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    const midX = (tipX + fs.bobberX) / 2;
+    const midY = Math.max(tipY, fs.bobberY) + 18;
+    ctx.quadraticCurveTo(midX, midY, fs.bobberX, fs.bobberY);
+    ctx.stroke();
+
+    // Bobber float
+    ctx.save();
+    ctx.shadowBlur = 3;
+    ctx.shadowColor = '#ffffff';
+
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(fs.bobberX, fs.bobberY, 2.5, 0, Math.PI, false);
+    ctx.fill();
+
+    ctx.fillStyle = '#ff1e50';
+    ctx.beginPath();
+    ctx.arc(fs.bobberX, fs.bobberY, 2.5, Math.PI, Math.PI * 2, false);
+    ctx.fill();
+
+    ctx.strokeStyle = '#ff9f1c';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(fs.bobberX, fs.bobberY - 2.5);
+    ctx.lineTo(fs.bobberX, fs.bobberY - 6);
+    ctx.stroke();
+
+    ctx.restore();
+
+    if (fs.castState === 'bite') {
+      ctx.fillStyle = '#ff1e50';
+      ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText("!", fs.bobberX, fs.bobberY - 10);
+    }
+  }
+};
+
+// Render orbiting showpiece fish caught by player!
+const drawOrbitingFish = (px: number, py: number) => {
+  if (!engine.equippedFish || engine.equippedFish.length === 0) return;
+
+  const count = engine.equippedFish.length;
+  const time = Date.now() / 1200;
+  const radius = 24;
+
+  engine.equippedFish.forEach((f: any, index: number) => {
+    const angle = time + (index * (Math.PI * 2) / count);
+    const ox = px + 12 + Math.cos(angle) * radius;
+    const oy = py + 16 + Math.sin(angle) * radius;
+
+    const fishConf = FISH_TYPES.find((fx) => fx.id === f.fishId);
+    if (!fishConf) return;
+
+    let sizePx = 10;
+    if (f.size === 'small') sizePx = 7;
+    else if (f.size === 'large') sizePx = 12;
+    else if (f.size === 'gigantic') sizePx = 15;
+    else if (f.size === 'cosmic') sizePx = 19;
+
+    const mConf = FISH_MUTATIONS.find((m) => m.id === f.mutation);
+    if (mConf && mConf.id !== 'none') {
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = mConf.color;
+
+      if (Math.random() < 0.12) {
+        engine.particles.push({
+          id: String(Math.random()),
+          type: 'star',
+          x: ox + Math.random() * 6 - 3,
+          y: oy + Math.random() * 6 - 3,
+          vx: Math.random() * 0.4 - 0.2,
+          vy: Math.random() * 0.4 - 0.2,
+          color: mConf.color,
+          size: Math.random() * 2 + 1,
+          life: 1.0,
+          decay: 0.05,
+          angle: 0,
+          angularVelocity: 0,
+          gravityAffect: false
+        });
+      }
+    }
+
+    ctx.fillStyle = mConf && mConf.id !== 'none' ? mConf.tint : 'rgba(255, 255, 255, 0.2)';
+    ctx.beginPath();
+    ctx.arc(ox + 4, oy + 4, sizePx / 2 + 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    drawStylizedFishVector(ctx, ox, oy, sizePx, fishConf.color, f.mutation);
+
+    ctx.shadowBlur = 0;
+
+    if (f.size === 'cosmic' || f.size === 'gigantic') {
+      ctx.strokeStyle = mConf ? mConf.color : '#36e5f0';
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(ox - 3, oy - 3, sizePx + 6, sizePx + 6);
+    }
+  });
+};
+
+// Render Reeling capture minigame bar
+const drawReelingMinigameBar = (w: number, h: number) => {
+  const mg = engine.fishingState.minigame;
+  const fs = engine.fishingState;
+
+  const barW = 220;
+  const barH = 14;
+  const barX = (w - barW) / 2;
+  const barY = h - 45;
+
+  // 1. Draw outer frame
+  ctx.fillStyle = 'rgba(16, 20, 31, 0.85)';
+  ctx.fillRect(barX - 4, barY - 4, barW + 8, barH + 20);
+  ctx.strokeStyle = '#36e5f0';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(barX - 4, barY - 4, barW + 8, barH + 20);
+
+  // 2. Draw slider track bar background
+  ctx.fillStyle = '#04070c';
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.strokeStyle = '#202b36';
+  ctx.strokeRect(barX, barY, barW, barH);
+
+  // 3. Draw player catch green bar zone (slider position)
+  const activeRodConf = RODS_LIST.find(r => r.id === fs.activeRod) || RODS_LIST[0];
+  const barHalf = 10 * activeRodConf.barMultiplier; // base width multiplier
+  
+  // Convert 0-100 values to coordinate offsets inside barW
+  const sliderCenterPx = barX + (mg.fishSliderPosition / 100) * barW;
+  const halfZonePx = (barHalf / 100) * barW;
+  
+  // High contrast capturing color zones: light green if on target, orange if missed!
+  const isCaught = Math.abs(mg.fishSliderPosition - mg.fishTargetPosition) <= barHalf;
+  ctx.fillStyle = isCaught ? 'rgba(115, 239, 125, 0.45)' : 'rgba(239, 125, 87, 0.2)';
+  ctx.fillRect(sliderCenterPx - halfZonePx, barY + 1, halfZonePx * 2, barH - 2);
+  
+  ctx.strokeStyle = isCaught ? '#73ef7d' : '#ef7d57';
+  ctx.lineWidth = 1.0;
+  ctx.strokeRect(sliderCenterPx - halfZonePx, barY + 1, halfZonePx * 2, barH - 2);
+
+  // 4. Draw moving fish target symbol
+  const fishPX = barX + (mg.fishTargetPosition / 100) * barW;
+  
+  ctx.save();
+  ctx.shadowBlur = 4;
+  ctx.shadowColor = '#36e5f0';
+  ctx.fillStyle = '#36e5f0';
+  // Draw small cute fish icon
+  ctx.beginPath();
+  ctx.ellipse(fishPX, barY + barH / 2, 5, 3.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Draw tail
+  ctx.beginPath();
+  ctx.moveTo(fishPX - 5, barY + barH / 2);
+  ctx.lineTo(fishPX - 9, barY + barH / 2 - 3);
+  ctx.lineTo(fishPX - 9, barY + barH / 2 + 3);
+  ctx.fill();
+  ctx.restore();
+
+  // 5. Catch Progress bar
+  const progressY = barY + barH + 5;
+  ctx.fillStyle = '#0a101d';
+  ctx.fillRect(barX, progressY, barW, 4);
+
+  const progPct = mg.fishProgress / 100;
+  ctx.fillStyle = progPct > 0.7 ? '#73ef7d' : (progPct > 0.35 ? '#ffcd75' : '#ef7d57');
+  ctx.fillRect(barX, progressY, barW * progPct, 4);
+  ctx.strokeStyle = '#1d2a3a';
+  ctx.strokeRect(barX, progressY, barW, 4);
+
+  // Helper text instructions overlay
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 5.2px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText("HOLD LEFT MOUSE BUTTON / SPACE / [E] TO CAPTURE THE FISH!", w / 2, barY - 6);
+  ctx.textAlign = 'left';
+};
+
+// Render Old Mariner Dave Fishing Shop and Inventory
+const drawDaveShopWindow = (w: number, h: number) => {
+  const panelW = 460;
+  const panelH = 240;
+  const px = (w - panelW) / 2;
+  const py = (h - panelH) / 2;
+
+  // Ocean glassy blue screen
+  ctx.fillStyle = '#0a101b';
+  ctx.fillRect(px, py, panelW, panelH);
+  ctx.strokeStyle = '#04070c';
+  ctx.lineWidth = 3;
+  ctx.strokeRect(px, py, panelW, panelH);
+
+  ctx.strokeStyle = '#1d3d57';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(px + 4, py + 4, panelW - 8, panelH - 8);
+
+  ctx.fillStyle = '#04070c';
+  ctx.fillRect(px + 4, py + 4, panelW - 8, 18);
+
+  ctx.fillStyle = '#36e5f0';
+  ctx.font = 'bold 8px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText("🎣 DAVE'S BAIT & TACKLE REEL SHOP & FISH MARKT", px + 12, py + 15);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#ef7d57';
+  ctx.fillText("[X] CLOSE", px + panelW - 12, py + 15);
+
+  const colW = 212;
+  const leftColX = px + 10;
+  const rightColX = px + colW + 28;
+
+  // LEFT COLUMN: PURCHASE UPGRADE FISHING RODS
+  ctx.fillStyle = '#04070c';
+  ctx.fillRect(leftColX, py + 26, colW, panelH - 36);
+  ctx.strokeStyle = '#1d3d57';
+  ctx.strokeRect(leftColX, py + 26, colW, panelH - 36);
+
+  ctx.fillStyle = '#ffcd75';
+  ctx.font = 'bold 7.2px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText("⭐ TACKLE SHOP RODS (CLICK TO BUY/EQUIP)", leftColX + colW / 2, py + 38);
+
+  ctx.textAlign = 'left';
+  RODS_LIST.forEach((rod, idx) => {
+    const rowY = py + 45 + idx * 30;
+    const isUnlocked = engine.inventory.tools.includes(rod.id);
+    const isActive = engine.fishingState.activeRod === rod.id;
+
+    ctx.fillStyle = isActive ? '#0d2235' : (isUnlocked ? '#101c10' : '#1e1111');
+    ctx.fillRect(leftColX + 4, rowY, colW - 8, 26);
+    ctx.strokeStyle = isActive ? '#36e5f0' : (isUnlocked ? '#73ef7d' : '#882222');
+    ctx.lineWidth = isActive ? 1.0 : 0.6;
+    ctx.strokeRect(leftColX + 4, rowY, colW - 8, 26);
+
+    // Rod indicator square
+    ctx.fillStyle = rod.color;
+    ctx.fillRect(leftColX + 8, rowY + 5, 16, 16);
+    ctx.strokeRect(leftColX + 8, rowY + 5, 16, 16);
+
+    // Fishing reel handle
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(leftColX + 16, rowY + 9, 3, 3);
+
+    // Details text
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 5.8px monospace';
+    ctx.fillText(rod.name.toUpperCase(), leftColX + 28, rowY + 11);
+
+    ctx.font = '4.8px monospace';
+    ctx.fillStyle = '#9fadbc';
+    ctx.fillText(`Luck: ${rod.luckMultiplier}x | Bar: ${rod.barMultiplier}x`, leftColX + 28, rowY + 18);
+
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 5.5px monospace';
+    if (isActive) {
+      ctx.fillStyle = '#36e5f0';
+      ctx.fillText("ACTIVE", leftColX + colW - 8, rowY + 15);
+    } else if (isUnlocked) {
+      ctx.fillStyle = '#73ef7d';
+      ctx.fillText("EQUIP", leftColX + colW - 8, rowY + 15);
+    } else {
+      ctx.fillStyle = '#ffd5bd';
+      const gemStr = rod.gemsCost > 0 ? ` + ${rod.gemsCost}G` : '';
+      ctx.fillText(`${rod.cost}C${gemStr}`, leftColX + colW - 8, rowY + 15);
+    }
+    ctx.textAlign = 'left';
+  });
+
+  // RIGHT COLUMN: SILO DEPOSIT NET INVENTORY
+  ctx.fillStyle = '#04070c';
+  ctx.fillRect(rightColX, py + 26, colW, panelH - 36);
+  ctx.strokeStyle = '#1d3d57';
+  ctx.strokeRect(rightColX, py + 26, colW, panelH - 36);
+
+  ctx.fillStyle = '#36e5f0';
+  ctx.font = 'bold 7.2px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText("🎒 COVE CATCH MARKT NET INVENTORY", rightColX + colW / 2, py + 38);
+
+  ctx.textAlign = 'left';
+  const fishInv = engine.fishingState.inventory;
+  
+  if (fishInv.length === 0) {
+    ctx.fillStyle = '#738a9c';
+    ctx.font = '5.5px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText("YOUR DEPOSIT NET IS EMPTY! CAST AWAY!", rightColX + colW / 2, py + 86);
+  } else {
+    // Render up to 8 rows of fish stacks!
+    const displayList = fishInv.slice(0, 8);
+    displayList.forEach((stack, idx) => {
+      const rowY = py + 45 + idx * 17;
+      const fType = FISH_TYPES.find(x => x.id === stack.fishId);
+      if (!fType) return;
+
+      const singleValue = fType.sellBase * (stack.size === 'cosmic' ? 5 : (stack.size === 'gigantic' ? 3 : (stack.size === 'large' ? 1.5 : (stack.size === 'small' ? 0.7 : 1.0)))) * (stack.mutation !== 'none' ? 2.5 : 1.0);
+      const isEquipped = engine.equippedFish.some(eq => eq.fishId === stack.fishId && eq.mutation === stack.mutation && eq.size === stack.size);
+      
+      const rowColor = isEquipped ? '#0f2910' : '#11151a';
+      ctx.fillStyle = rowColor;
+      ctx.fillRect(rightColX + 4, rowY, colW - 8, 15);
+      ctx.strokeStyle = '#202b36';
+      ctx.strokeRect(rightColX + 4, rowY, colW - 8, 15);
+
+      // Icon placeholder colored dot
+      ctx.fillStyle = fType.color;
+      ctx.beginPath();
+      ctx.arc(rightColX + 10, rowY + 7.5, 3, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Fish Name
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 5.2px monospace';
+      
+      const mutLab = stack.mutation !== 'none' ? `${stack.mutation.toUpperCase()} ` : '';
+      const sizeLab = stack.size !== 'medium' ? `[${stack.size.toUpperCase()}] ` : '';
+      ctx.fillText(`${mutLab}${fType.name.toUpperCase()} (x${stack.count})`, rightColX + 16, rowY + 7);
+
+      ctx.fillStyle = '#ffd5bd';
+      ctx.font = '4.5px monospace';
+      ctx.fillText(`${mutLab !== '' ? 'Mutant ' : ''}${sizeLab !== '' ? 'Unique ' : 'Common'} - Sell ${Math.floor(singleValue)}C ea`, rightColX + 16, rowY + 13);
+
+      // Action sub-options
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 5.0px monospace';
+      
+      // Equip display button
+      ctx.fillStyle = isEquipped ? '#36e5f0' : '#73ef7d';
+      ctx.fillText(isEquipped ? "SHOWING" : "SHOW", rightColX + colW - 8, rowY + 6.5);
+
+      // Sell click button
+      ctx.fillStyle = '#ef7d57';
+      ctx.fillText("SELL ALL STACK", rightColX + colW - 8, rowY + 12.5);
+
+      ctx.textAlign = 'left';
+    });
+  }
+
+  // Giant "SELL ALL FISH" button at the bottom of the right column
+  const sellAllY = py + panelH - 28;
+  ctx.fillStyle = '#1e3825';
+  ctx.fillRect(rightColX + 4, sellAllY, colW - 8, 20);
+  ctx.strokeStyle = '#2b6e3c';
+  ctx.lineWidth = 1.0;
+  ctx.strokeRect(rightColX + 4, sellAllY, colW - 8, 20);
+
+  ctx.fillStyle = '#73ef7d';
+  ctx.font = 'bold 7px monospace';
+  ctx.textAlign = 'center';
+
+  let totalValue = 0;
+  fishInv.forEach(stack => {
+    const fType = FISH_TYPES.find(x => x.id === stack.fishId);
+    if (fType) {
+      const singleValue = fType.sellBase * (stack.size === 'cosmic' ? 5 : (stack.size === 'gigantic' ? 3 : (stack.size === 'large' ? 1.5 : (stack.size === 'small' ? 0.7 : 1.0)))) * (stack.mutation !== 'none' ? 2.5 : 1.0);
+      totalValue += Math.floor(singleValue) * stack.count;
+    }
+  });
+
+  ctx.fillText(`💰 SELL ALL HARVESTED COVE FISH (+${totalValue}C)`, rightColX + colW / 2, sellAllY + 12);
+  ctx.textAlign = 'left';
+};
+
+const handleDaveShopClicks = (mx: number, my: number) => {
+  const panelW = 460;
+  const panelH = 240;
+  const px = (width - panelW) / 2;
+  const py = (height - panelH) / 2;
+
+  // 1. Close button click at top right
+  if (mx >= px + panelW - 50 && mx <= px + panelW - 4 && my >= py + 4 && my <= py + 20) {
+    isDaveShopOpen = false;
+    sound.playTick();
+    return;
+  }
+
+  const colW = 212;
+  const leftColX = px + 10;
+  const rightColX = px + colW + 28;
+
+  // 2. LEFT COLUMN: BUY OR EQUIP RODS
+  if (mx >= leftColX && mx <= leftColX + colW) {
+    RODS_LIST.forEach((rod, idx) => {
+      const rowY = py + 45 + idx * 30;
+      if (my >= rowY && my <= rowY + 26) {
+        if (engine.purchaseFishingRod(rod.id)) {
+          sound.playUnlock();
+        } else {
+          sound.playSplat();
+          engine.spawnFloatingText("NOT ENOUGH FUNDS!", leftColX + colW / 2, rowY + 12, "#ef7d57");
+        }
+      }
+    });
+  }
+
+  // 3. RIGHT COLUMN: HARVEST AND SELL FISH
+  if (mx >= rightColX && mx <= rightColX + colW) {
+    const sellAllY = py + panelH - 28;
+    if (my >= sellAllY && my <= sellAllY + 20) {
+      if (engine.sellAllFish()) {
+        sound.playUnlock();
+        engine.spawnFloatingText("ALL FISH SOLD SUCCESSFULLY! 💰", rightColX + colW / 2, sellAllY, "#73ef7d");
+      } else {
+        sound.playSplat();
+        engine.spawnFloatingText("NO FISH TO SELL!", rightColX + colW / 2, sellAllY, "#ef7d57");
+      }
+      return;
+    }
+
+    const fishInv = engine.fishingState.inventory;
+    fishInv.forEach((stack: any, idx: number) => {
+      const rowY = py + 45 + idx * 17;
+      if (idx < 8 && my >= rowY && my <= rowY + 15) {
+        const clickColX = mx - rightColX;
+        if (clickColX > colW - 55) {
+          engine.toggleEquipFish(stack.fishId, stack.mutation, stack.size);
+          sound.playTick();
+        } else {
+          if (engine.sellFishStack(stack.fishId, stack.mutation, stack.size)) {
+            sound.playUnlock();
+          } else {
+            sound.playSplat();
+          }
+        }
+      }
+    });
   }
 };
 
@@ -1801,6 +2589,9 @@ const drawPortalHoles = () => {
 };
 
 const drawInteractiveBannersAndHUD = (w: number, h: number) => {
+  if (engine.gameMode === 'lobby' || engine.gameMode === 'fishing') {
+    drawWeatherEffects(ctx, w, h);
+  }
   const groundY = h - 32;
 
   // Render Top Level Bar
@@ -1832,14 +2623,37 @@ const drawInteractiveBannersAndHUD = (w: number, h: number) => {
   // Audio Indicator Click Bounds Left
   ctx.textAlign = 'center';
   ctx.fillStyle = sound.enabled ? '#333c57' : '#a24b31';
-  ctx.fillRect(w / 2 - 32, 9, 64, 14);
+  ctx.fillRect(w / 2 - 70, 9, 64, 14);
   ctx.strokeStyle = '#10121c';
   ctx.lineWidth = 1;
-  ctx.strokeRect(w / 2 - 32, 9, 64, 14);
+  ctx.strokeRect(w / 2 - 70, 9, 64, 14);
   
   ctx.fillStyle = '#f4f4f4';
   ctx.font = '6px monospace';
-  ctx.fillText(sound.enabled ? '🔊 SOUND' : '🔇 MUTED', w / 2, 18);
+  ctx.fillText(sound.enabled ? '🔊 SOUND' : '🔇 MUTED', w / 2 - 38, 18);
+
+  // Weather Indicator Click Bounds Right
+  ctx.fillStyle = engine.weather === 'clear' ? '#1c7653' : (engine.weather === 'rain' ? '#1d3557' : '#55375d');
+  ctx.fillRect(w / 2 + 6, 9, 64, 14);
+  ctx.strokeStyle = '#10121c';
+  ctx.strokeRect(w / 2 + 6, 9, 64, 14);
+
+  ctx.fillStyle = '#f4f4f4';
+  ctx.font = '6px monospace';
+  let weatherLabel = '☀️ CLEAR';
+  if (engine.weather === 'rain') weatherLabel = '🌧️ RAIN';
+  else if (engine.weather === 'snow') weatherLabel = '❄️ SNOW';
+  ctx.fillText(weatherLabel, w / 2 + 38, 18);
+
+  // Active floating prompt warnings inside Fishing Mode
+  if (engine.gameMode === 'fishing') {
+    const px = engine.player.x + 12;
+    const py = engine.player.y + 16;
+    const distDave = Math.abs(px - 90);
+    if (distDave < 64 && py > 180) {
+      drawKeyInteractiveBubble(90, 220 - 45, "[E] TALK TO OLD DAVE 👴");
+    }
+  }
 
   // Active floating prompt warnings inside Farming Mode
   if (engine.gameMode === 'farming') {
@@ -1906,6 +2720,11 @@ const drawInteractiveBannersAndHUD = (w: number, h: number) => {
     // Farm Portal
     if (Math.abs(px - 580) < 26) {
       drawKeyInteractiveBubble(580, groundY - 50, "WALK IN TO ENTER FARM GARDEN");
+    }
+
+    // Fishing Portal
+    if (Math.abs(px - 530) < 26) {
+      drawKeyInteractiveBubble(530, groundY - 50, "WALK IN TO FISH COVE LAGOON");
     }
   }
 
@@ -2506,6 +3325,81 @@ const drawInteractBubbles = () => {
   }
 };
 
+interface WeatherParticle {
+  x: number;
+  y: number;
+  speed: number;
+  angle: number;
+  size: number;
+  opacity: number;
+}
+const weatherParticles: WeatherParticle[] = [];
+
+const initWeatherParticles = () => {
+  if (weatherParticles.length > 0) return;
+  for (let i = 0; i < 90; i++) {
+    weatherParticles.push({
+      x: Math.random() * 660 - 10,
+      y: Math.random() * 370 - 10,
+      speed: 1.5 + Math.random() * 2.5,
+      angle: Math.random() * 0.08 - 0.04,
+      size: 0.8 + Math.random() * 1.5,
+      opacity: 0.45 + Math.random() * 0.45,
+    });
+  }
+};
+
+const drawWeatherEffects = (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+  if (engine.weather === 'clear') return;
+  initWeatherParticles();
+
+  ctx.save();
+  if (engine.weather === 'rain') {
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.16)';
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = 'rgba(147, 197, 253, 0.48)';
+    ctx.lineWidth = 1.0;
+    for (const p of weatherParticles) {
+      p.y += p.speed * 2.1;
+      p.x += Math.sin(Date.now() * 0.001) * 0.25 + p.angle * 1.5;
+
+      if (p.y > h) {
+        p.y = -10;
+        p.x = Math.random() * (w + 20) - 10;
+      }
+      if (p.x < -10) p.x = w + 10;
+      if (p.x > w + 10) p.x = -10;
+
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(p.x + p.angle * 4, p.y + p.size * 5.5);
+      ctx.stroke();
+    }
+  } else if (engine.weather === 'snow') {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = 'rgba(241, 245, 249, 0.82)';
+    for (const p of weatherParticles) {
+      p.y += p.speed * 0.48;
+      p.x += Math.sin(Date.now() * 0.0015 + p.y * 0.035) * 0.4 + p.angle * 1.2;
+
+      if (p.y > h) {
+        p.y = -10;
+        p.x = Math.random() * (w + 20) - 10;
+      }
+      if (p.x < -10) p.x = w + 10;
+      if (p.x > w + 10) p.x = -10;
+
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * 1.12, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+};
+
 // ----------------- Master Animation Loop -----------------
 
 const loop = () => {
@@ -2514,11 +3408,16 @@ const loop = () => {
     const walkSpeed = p.grabbingBox ? 1.75 : 2.5;
     const accel = 0.52;
 
-    // Track keyboard inputs for physics-bound features (e.g. ladders)
-    engine.inputs.up = !!(keys['KeyW'] || keys['ArrowUp'] || keys['Space']);
+    // Track keyboard inputs for physics-bound features (e.g. ladders, fishing)
+    if (engine.gameMode === 'fishing') {
+      engine.inputs.up = !!(keys['KeyW'] || keys['ArrowUp'] || keys['Space'] || keys['KeyE'] || isMouseDownHeld);
+      engine.inputs.right = !!(keys['KeyD'] || keys['ArrowRight'] || keys['KeyE'] || isMouseDownHeld);
+    } else {
+      engine.inputs.up = !!(keys['KeyW'] || keys['ArrowUp'] || keys['Space']);
+      engine.inputs.right = !!(keys['KeyD'] || keys['ArrowRight']);
+    }
     engine.inputs.down = !!(keys['KeyS'] || keys['ArrowDown']);
     engine.inputs.left = !!(keys['KeyA'] || keys['ArrowLeft']);
-    engine.inputs.right = !!(keys['KeyD'] || keys['ArrowRight']);
 
     // Track WSAD arcade joystick buttons
     if (!isShopOpen && !isClosetOpen && engine.gameMode !== 'loading') {
@@ -2664,6 +3563,112 @@ const loop = () => {
       // Overlay Seeding Popup if open
       if (engine.farmingState.activePlantingBedId !== null) {
         drawSeedPlantingWindow(width, height);
+      }
+    } else if (engine.gameMode === 'fishing') {
+      drawFishingLagoonsBackground(width, height);
+
+      // Player character setup
+      let playerSprite = 'player_idle_1';
+      if (p.state === 'walk') {
+        const walkFrames = ['player_walk_1', 'player_walk_2', 'player_walk_3', 'player_walk_4'];
+        playerSprite = walkFrames[p.animFrame] || 'player_walk_1';
+      } else if (p.state === 'grab_idle' || p.state === 'grab_walk') {
+        playerSprite = 'player_carry_idle';
+      } else if (p.state === 'jump') {
+        playerSprite = p.grabbingBox ? 'player_carry_idle' : 'player_jump';
+      }
+
+      if (engine.fishingState.castState === 'reeling') {
+        playerSprite = 'player_carry_idle';
+      }
+
+      // Core Player Draw
+      sprites.drawSprite(ctx, playerSprite, p.x, p.y, p.width, p.height, {
+        flipX: p.facing === 'left'
+      });
+
+      // Worn Costume (Hat/Glasses/Hair/Crown) & Carried Tool overlays
+      drawWornCosmetics(p.x, p.y, p.facing === 'left');
+      drawFishingLagoonsBobberAndPole(width, height);
+      drawOrbitingFish(p.x, p.y);
+
+      // Trail companion Pet if active
+      if (engine.currentPet) {
+        sprites.drawSprite(ctx, `pet_${engine.currentPet}`, engine.petX, engine.petY, 16, 16, {
+          flipX: p.facing === 'left'
+        });
+      }
+
+      // Particles physics
+      for (const part of engine.particles) {
+        ctx.save();
+        ctx.globalAlpha = part.life;
+
+        if (part.type === 'smoke') {
+          ctx.beginPath();
+          ctx.fillStyle = part.color;
+          ctx.arc(part.x, part.y, part.size * (1.5 - part.life * 0.5), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (part.type === 'fire') {
+          ctx.beginPath();
+          ctx.fillStyle = part.color;
+          ctx.arc(part.x, part.y, part.size * part.life, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (part.type === 'shockwave') {
+          ctx.beginPath();
+          ctx.strokeStyle = part.color;
+          ctx.lineWidth = 1.5;
+          ctx.arc(part.x, part.y, part.size * (1.0 - part.life) * 4.5, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (part.type === 'star' || part.type === 'sparkle') {
+          ctx.translate(part.x, part.y);
+          ctx.rotate(part.angle);
+          ctx.fillStyle = part.color;
+          const sz = part.size;
+          ctx.beginPath();
+          ctx.moveTo(0, -sz);
+          ctx.lineTo(sz * 0.3, -sz * 0.3);
+          ctx.lineTo(sz, 0);
+          ctx.lineTo(sz * 0.3, sz * 0.3);
+          ctx.lineTo(0, sz);
+          ctx.lineTo(-sz * 0.3, sz * 0.3);
+          ctx.lineTo(-sz, 0);
+          ctx.lineTo(-sz * 0.3, -sz * 0.3);
+          ctx.closePath();
+          ctx.fill();
+        } else if (part.type === 'wood_splinter') {
+          ctx.translate(part.x, part.y);
+          ctx.rotate(part.angle);
+          ctx.fillStyle = part.color;
+          ctx.fillRect(-part.size / 2, -1, part.size, 2);
+        }
+
+        ctx.restore();
+      }
+
+      // Floating text popups
+      ctx.textAlign = 'center';
+      for (const txt of engine.floatingTexts) {
+        ctx.fillStyle = 'rgba(16, 20, 31, 0.82)';
+        const tW = ctx.measureText(txt.text).width + 6;
+        ctx.fillRect(txt.x - tW / 2, txt.y - 10, tW, 12);
+
+        ctx.fillStyle = txt.color;
+        ctx.font = 'bold 7.5px monospace';
+        ctx.fillText(txt.text, txt.x, txt.y - 1);
+      }
+
+      // Render interactive banners
+      drawInteractiveBannersAndHUD(width, height);
+
+      // Render reeling minigame bar if active
+      if (engine.fishingState.castState === 'reeling') {
+        drawReelingMinigameBar(width, height);
+      }
+
+      // Overlay Fisherman Dave shop window if open
+      if (isDaveShopOpen) {
+        drawDaveShopWindow(width, height);
       }
     } else {
       // Render sandbox workspace backdrop
